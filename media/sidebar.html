@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  body { color: white; background-color: #1e1e1e; padding: 1rem; font-family: sans-serif; }
+  button { background: #7c5cff; width: 100% ;border: none; padding: 0.5rem 1rem; border-radius: 5px; color: white; cursor: pointer; }
+</style>
+</head>
+<body>
+  <button id="newChatBtn">New Chat</button>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.getElementById("newChatBtn").addEventListener("click", () => {
+      vscode.postMessage({ command: "newChat" });
+    });
+  </script>
+</body>
+</html>

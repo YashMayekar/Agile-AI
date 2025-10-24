@@ -1,0 +1,81 @@
+{
+  "name": "ai-dev",
+  "displayName": "Agile AI Assistant",
+  "description": "Agile AI developer",
+  "version": "0.0.1",
+  "publisher": "Yash Mayekar",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:chatSidebarView"
+  ],
+  "main": "./dist/extension.js",
+ "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "chatActivityBar",
+          "title": "AI Chat",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "chatActivityBar": [
+        {
+          "type": "webview", 
+          "id": "chatSidebarView",
+          "name": "Chats"
+        }
+      ]
+    },
+    
+
+    "commands": [
+      {
+        "command": "chat.newChat",
+        "title": "New Chat",
+        "icon": "media/chatViewIcon.svg"
+      },
+      {
+        "command": "chat.renameChat",
+        "title": "Rename Chat"
+      },
+      {
+        "command": "chat.deleteChat",
+        "title": "Delete Chat"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.105.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0",
+    "esbuild": "^0.25.10",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}

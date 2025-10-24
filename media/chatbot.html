@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http://localhost:8000;">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Streaming Chat</title>
+
+<style>
+:root{
+  --bg1: linear-gradient(135deg,#0f172a 0%, #001219 100%);
+  --bubble-bg: linear-gradient(135deg, rgba(124,92,255,0.12), rgba(0,200,255,0.05));
+  --accent:#7c5cff;
+  --muted:rgba(255,255,255,0.55);
+}
+html,body{
+  height:100%; margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto;
+  background:var(--bg1); color:#e6eef8;
+}
+.container{
+  display:flex; flex-direction:column; height: calc(100vh - 36px);
+  padding:18px; gap:12px;
+}
+.topbar{ display:flex; align-items:center; gap:12px; }
+.logo{
+  width:44px; height:44px; border-radius:10px; background:var(--bubble-bg);
+  display:flex; align-items:center; justify-content:center;
+  color:var(--accent); font-weight:700; box-shadow:0 6px 18px rgba(0,0,0,0.6);
+}
+.heading{ font-size:16px; font-weight:600; }
+.meta{ font-size:12px; color:var(--muted); }
+
+.chat-panel{
+  flex:1; overflow:auto;
+  border-radius:12px; padding:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));
+}
+.message{
+  max-width:88%; margin-bottom:14px; padding:12px 14px; border-radius:10px;
+  background:rgba(255,255,255,0.02);
+  box-shadow:0 6px 20px rgba(2,6,23,0.6);
+  position: relative;
+}
+.message.user{ margin-left:auto; background:linear-gradient(90deg,rgba(124,92,255,0.12),rgba(0,200,255,0.06)); }
+.message.assistant{ margin-right:auto; border-left:3px solid rgba(124,92,255,0.18); }
+
+.rendered{ white-space:pre-wrap; word-break:break-word; font-size:13.8px; }
+
+h1{ color:var(--accent); margin:6px 0 8px 0; font-size:18px; }
+pre.codeblock{
+  margin:8px 0; padding:12px; border-radius:8px; overflow:auto;
+  background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.03);
+}
+pre.codeblock code{
+  font-family:'Courier New',monospace; font-size:13px; color:#dbeafe;
+}
+
+.loader{
+  display:flex; align-items:center; justify-content:center;
+  gap:6px;
+}
+.dot{
+  width:8px; height:8px; border-radius:50%; background:var(--accent); opacity:0.15;
+  animation:blink 1s infinite;
+}
+.dot:nth-child(2){ animation-delay:0.15s; }
+.dot:nth-child(3){ animation-delay:0.3s; }
+@keyframes blink{
+  0%{opacity:0.15; transform:translateY(0)}
+  50%{opacity:1; transform:translateY(-6px)}
+  100%{opacity:0.15; transform:translateY(0)}
+}
+
+.composer{ display:flex; gap:10px; align-items:center; padding-top:10px; }
+.input{
+  flex:1; min-height:44px; border-radius:9px; padding:10px 12px;
+  background:rgba(255,255,255,0.02); color:#e6eef8; border:1px solid rgba(255,255,255,0.03);
+  resize:none; font-size:13.5px;
+}
+button.send{
+  border:none; background:linear-gradient(90deg,#7c5cff,#00c8ff); color:white;
+  padding:20px 30px; border-radius:9px; cursor:pointer; font-weight:600;
+  box-shadow:0 8px 18px rgba(0,0,0,0.6);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <div class="logo">AI</div>
+    <div>
+      <div class="heading">Agile AI Assistant</div>
+    </div>
+  </div>
+
+  <div id="chat" class="chat-panel"></div>
+
+  <div class="composer">
+    <textarea id="input" class="input" rows="2" placeholder="Type your message..."></textarea>
+    <button id="send" class="send">Send</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+
+  function addMessage(role, html){
+    const div = document.createElement('div');
+    div.className = 'message ' + role;
+    const inner = document.createElement('div');
+    inner.className = 'rendered';
+    inner.innerHTML = html;
+    div.appendChild(inner);
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+
+  function escapeHtml(s){
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function renderAccumulated(t) {
+  let text = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Handle code blocks with optional language
+  const codeRegex = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+  text = text.replace(codeRegex, (m, lang, code) => {
+    const safeCode = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const languageLabel = lang ? `<div style="opacity:0.6;font-size:12px;margin-bottom:4px;">${lang}</div>` : '';
+    return `<pre class="codeblock">${languageLabel}<code>${safeCode}</code></pre>`;
+  });
+
+  // Split lines to handle headings and lists
+  const lines = text.split('\n');
+  let inList = false;
+  text = lines.map(line => {
+    // H2 ##
+    if (line.startsWith('## ')) return '<h2>' + line.slice(3) + '</h2>';
+    // H3 ###
+    if (line.startsWith('### ')) return '<h3>' + line.slice(4) + '</h3>';
+    // Unordered list
+    if (line.startsWith('- ')) {
+      if (!inList) { inList = true; return '<ul><li>' + line.slice(2) + '</li>'; }
+      return '<li>' + line.slice(2) + '</li>';
+    } else {
+      if (inList) { inList = false; line = '</ul>' + line; }
+    }
+    return line;
+  }).join('<br>');
+
+  // Bold text **
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // Inline code `code`
+  text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.03);padding:2px 6px;border-radius:4px;">$1</code>');
+
+  // Close list if it was open at the end
+  if (inList) text += '</ul>';
+
+  return text;
+}
+
+
+  function createAssistantPlaceholder(){
+    const wrap = addMessage('assistant','');
+    wrap.style.position = 'relative'; // ensure loader positions correctly
+
+    const loader = document.createElement('div');
+    loader.className = 'loader';
+    loader.innerHTML = `
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    `;
+    loader.style.position = 'absolute';
+    loader.style.top = '50%';
+    loader.style.left = '50%';
+    loader.style.transform = 'translate(-50%, -50%)';
+
+    wrap.appendChild(loader);
+    return {wrap, loader};
+  }
+
+  async function sendMessage(msg){
+    if(!msg.trim()) return;
+    addMessage('user',escapeHtml(msg));
+    input.value='';
+
+    const {wrap, loader} = createAssistantPlaceholder();
+    let acc='';
+
+    try{
+      const resp = await fetch('http://localhost:8000/chat/stream',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:msg, conversation_id:null})
+      });
+
+      if(!resp.body){wrap.innerHTML='No response'; return;}
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf='';
+      while(true){
+        const {value, done} = await reader.read();
+        if(done) break;
+        buf += decoder.decode(value,{stream:true});
+        const lines = buf.split(/\r?\n/); buf = lines.pop();
+        for(const line of lines){
+          if(!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if(payload==='[DONE]'){loader.remove(); return;}
+          try{
+            const obj = JSON.parse(payload);
+            if(obj.chunk){
+              acc += obj.chunk;
+              wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
+              chat.scrollTop = chat.scrollHeight;
+              if(obj.done){ loader.remove(); }
+            }
+          }catch{}
+        }
+      }
+      loader.remove();
+      wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
+    }catch(e){
+      loader.remove();
+      wrap.querySelector('.rendered').innerHTML='<span style="color:#ff8fa3">'+escapeHtml(String(e))+'</span>';
+    }
+  }
+
+  sendBtn.onclick = () => sendMessage(input.value);
+  input.addEventListener('keydown', e => {
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(input.value);}
+  });
+
+  addMessage('assistant','<div style="opacity:0.9">Hello! Type a question and press <strong>Send</strong>.</div>');
+})();
+</script>
+</body>
+</html>
