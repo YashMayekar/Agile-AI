@@ -79,9 +79,37 @@ pre.codeblock code{
   background:rgba(255,255,255,0.02); color:#e6eef8; border:1px solid rgba(255,255,255,0.03);
   resize:none; font-size:13.5px;
 }
+
+.button-container {
+  display: flex;
+  flex-direction: column;
+  width: 150px; /* button takes full width */
+  max-width: 300px; /* optional: control overall width */
+}
+.thinking-row {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  gap: 8px;
+}
+
+#Thinking {
+  background: var(--bg1);
+  color: #e6eef8;
+  border: 1px solid #ccc;
+  padding: 5px;
+}
+
+/* Ensure dropdown options have consistent style */
+#Thinking option {
+  background: var(--bg1);
+  color: black;
+}
+
+
 button.send{
   border:none; background:linear-gradient(90deg,#7c5cff,#00c8ff); color:white;
-  padding:20px 30px; border-radius:9px; cursor:pointer; font-weight:600;
+  width: 100%; padding:10px; border-radius:9px; cursor:pointer; font-weight:600;
   box-shadow:0 8px 18px rgba(0,0,0,0.6);
 }
 </style>
@@ -99,7 +127,18 @@ button.send{
 
   <div class="composer">
     <textarea id="input" class="input" rows="2" placeholder="Type your message..."></textarea>
+    
+    <div class="button-container">
     <button id="send" class="send">Send</button>
+    <div class="thinking-row">
+      <label for="Thinking">Thinking:</label>
+      <select name="Thinking" id="Thinking">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+    </div>
+    </div>
   </div>
 </div>
 
@@ -108,8 +147,21 @@ button.send{
   const chat = document.getElementById('chat');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
+  const vscode = acquireVsCodeApi();
+  const conversationId = '{{conversationId}}';
+  const thinkingSelect = document.getElementById("Thinking");
+  
+  // State management
+  let chatHistory = [];
+  let hasSentInitialMessage = false; // Track if initial message has been sent
 
-  function addMessage(role, html){
+  // Function to save message to history
+  function saveMessageToHistory(role, message) {
+    chatHistory.push({ role, message, timestamp: Date.now() });
+  }
+
+  // Modified addMessage function to save history
+  function addMessage(role, html, messageText = '') {
     const div = document.createElement('div');
     div.className = 'message ' + role;
     const inner = document.createElement('div');
@@ -118,54 +170,117 @@ button.send{
     div.appendChild(inner);
     chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
+    
+    // Save to history
+    if (messageText) {
+      saveMessageToHistory(role, messageText);
+    }
+    
     return div;
   }
+
+  // Load existing messages when panel is restored
+  window.addEventListener('load', () => {
+    // Notify extension that we're ready to receive history
+    vscode.postMessage({ command: 'chatLoaded' });
+    const imsg = "Hello, introduce yourself in enthusiasism, including your name and some emojis!"
+    // Send initial message automatically when chat loads
+    sendInitialMessage(imsg);
+  });
+
+  // Listen for history messages from extension
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (message.type === 'addMessage') {
+      addMessage(message.sender, renderAccumulated(message.message), message.message);
+    }
+  });
+
+  // Listen for execution results from extension
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (message.source === 'extension') {
+      const payload = message.payload;
+      
+      switch (payload.type) {
+        case 'execute_result':
+          // Display the assistant response with execution results
+          if (payload.assistantResponse) {
+            addMessage('assistant', renderAccumulated(payload.assistantResponse));
+            try {
+              if (payload.operation === 'read') {
+                const readResponse = `Response from the Read Operation:\n\n${payload.assistantResponse}`;
+                console.log('\n\nFROM HTML \n\nRead operation response:', readResponse);
+                sendMessage(readResponse)
+              //   const fileContent = typeof payload.result === 'string' ? payload.result : JSON.stringify(payload.result, null, 2);
+              //   addMessage('assistant', renderAccumulated(`📄 **File Content:**\n\n\`\`\`txt\n${fileContent}\n\`\`\``));
+              }
+            } catch (e) {}
+          }
+          break;
+          
+        case 'execute_error':
+          // Display error message
+          if (payload.assistantResponse) {
+            addMessage('assistant', renderAccumulated(payload.assistantResponse));
+          }
+          break;
+          
+        case 'parse_error':
+          addMessage('assistant', renderAccumulated(`❌ **Parse Error**\n\n${payload.message}`));
+          break;
+          
+        case 'no_command':
+          //addMessage('assistant', renderAccumulated('ℹ️ **No commands found**\n\nNo executable command blocks were found in the response.'));
+          break;
+      }
+    }
+  });
 
   function escapeHtml(s){
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function renderAccumulated(t) {
-  let text = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    let text = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  // Handle code blocks with optional language
-  const codeRegex = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-  text = text.replace(codeRegex, (m, lang, code) => {
-    const safeCode = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const languageLabel = lang ? `<div style="opacity:0.6;font-size:12px;margin-bottom:4px;">${lang}</div>` : '';
-    return `<pre class="codeblock">${languageLabel}<code>${safeCode}</code></pre>`;
-  });
+    // Handle code blocks with optional language
+    const codeRegex = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
+    text = text.replace(codeRegex, (m, lang, code) => {
+      const safeCode = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const languageLabel = lang ? `<div style="opacity:0.6;font-size:12px;margin-bottom:4px;">${lang}</div>` : '';
+      return `<pre class="codeblock">${languageLabel}<code>${safeCode}</code></pre>`;
+    });
 
-  // Split lines to handle headings and lists
-  const lines = text.split('\n');
-  let inList = false;
-  text = lines.map(line => {
-    // H2 ##
-    if (line.startsWith('## ')) return '<h2>' + line.slice(3) + '</h2>';
-    // H3 ###
-    if (line.startsWith('### ')) return '<h3>' + line.slice(4) + '</h3>';
-    // Unordered list
-    if (line.startsWith('- ')) {
-      if (!inList) { inList = true; return '<ul><li>' + line.slice(2) + '</li>'; }
-      return '<li>' + line.slice(2) + '</li>';
-    } else {
-      if (inList) { inList = false; line = '</ul>' + line; }
-    }
-    return line;
-  }).join('<br>');
+    // Split lines to handle headings and lists
+    const lines = text.split('\n');
+    let inList = false;
+    text = lines.map(line => {
+      // H2 ##
+      if (line.startsWith('## ')) return '<h2>' + line.slice(3) + '</h2>';
+      // H3 ###
+      if (line.startsWith('### ')) return '<h3>' + line.slice(4) + '</h3>';
+      // Unordered list
+      if (line.startsWith('- ')) {
+        if (!inList) { inList = true; return '<ul><li>' + line.slice(2) + '</li>'; }
+        return '<li>' + line.slice(2) + '</li>';
+      } else {
+        if (inList) { inList = false; line = '</ul>' + line; }
+      }
+      return line;
+    }).join('<br>');
 
-  // Bold text **
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Bold text **
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-  // Inline code `code`
-  text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.03);padding:2px 6px;border-radius:4px;">$1</code>');
+    // Inline code `code`
+    text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.03);padding:2px 6px;border-radius:4px;">$1</code>');
 
-  // Close list if it was open at the end
-  if (inList) text += '</ul>';
+    // Close list if it was open at the end
+    if (inList) text += '</ul>';
 
-  return text;
-}
-
+    return text;
+  }
 
   function createAssistantPlaceholder(){
     const wrap = addMessage('assistant','');
@@ -187,59 +302,274 @@ button.send{
     return {wrap, loader};
   }
 
-  async function sendMessage(msg){
-    if(!msg.trim()) return;
-    addMessage('user',escapeHtml(msg));
-    input.value='';
+  async function sendInitialMessage(msg) {
+    if (hasSentInitialMessage) return;
+    hasSentInitialMessage = true;
+    // enthusiasism typo fixed
+    // const initialMessage = "" ;
+    // if (msg){
+    //   initialMessage = msg;
+    // }
+    // initialMessage = "Hello, introduce yourself in enthusiasism, including your name and some emojis!";
+    
+    // Disable send button and input during request
+    sendBtn.disabled = true;
+    input.disabled = true;
+    input.placeholder = "Initializing AI Assistant...";
 
     const {wrap, loader} = createAssistantPlaceholder();
-    let acc='';
+    let acc = '';
+    let loaderRemoved = false;
 
-    try{
-      const resp = await fetch('http://localhost:8000/chat/stream',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({message:msg, conversation_id:null})
+    function removeLoader() {
+      if (!loaderRemoved && loader && loader.parentNode) {
+        loader.remove();
+        loaderRemoved = true;
+      }
+    }
+
+    try {
+      const resp = await fetch('http://localhost:8000/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: msg, 
+          conversation_id: conversationId, 
+          use_system_instructions: true, // Enable system instructions for initial message
+          stream: true 
+        })
       });
 
-      if(!resp.body){wrap.innerHTML='No response'; return;}
+      if (!resp.body) {
+        wrap.innerHTML = 'No response'; 
+        removeLoader();
+        enableInput();
+        return;
+      }
+      
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      let buf='';
-      while(true){
-        const {value, done} = await reader.read();
-        if(done) break;
-        buf += decoder.decode(value,{stream:true});
-        const lines = buf.split(/\r?\n/); buf = lines.pop();
-        for(const line of lines){
-          if(!line.startsWith('data:')) continue;
+      let buf = '';
+      
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split(/\r?\n/); 
+        buf = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
           const payload = line.slice(5).trim();
-          if(payload==='[DONE]'){loader.remove(); return;}
-          try{
+          
+          if (payload === '[DONE]') {
+            removeLoader();
+            
+            // Invoke structure parser when response is fully generated
+            if (acc.trim()) {
+              vscode.postMessage({
+                command: 'llm_output',
+                text: acc
+              });
+            }
+            
+            enableInput();
+            return;
+          }
+          
+          try {
             const obj = JSON.parse(payload);
-            if(obj.chunk){
+            if (obj.chunk) {
               acc += obj.chunk;
               wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
+              
               chat.scrollTop = chat.scrollHeight;
-              if(obj.done){ loader.remove(); }
+              
+              // Remove loader when first chunk arrives
+              if (!loaderRemoved) {
+                removeLoader();
+              }
+              
+              if (obj.done) {
+                // Invoke structure parser when done is true
+                console.log('Final chunk received, invoking structure parser.');
+                console.log('\n\n\nFinal response from chatbot.html :\n', acc);
+                if (acc.trim()) {
+                  vscode.postMessage({
+                    command: 'llm_output',
+                    text: acc
+                  });
+                }
+                
+                enableInput();
+              }
             }
-          }catch{}
+          } catch (e) {
+            console.error('Error parsing JSON:', e);
+          }
         }
       }
-      loader.remove();
+
+      removeLoader();
       wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
-    }catch(e){
-      loader.remove();
-      wrap.querySelector('.rendered').innerHTML='<span style="color:#ff8fa3">'+escapeHtml(String(e))+'</span>';
+      
+      // Additional safety check - invoke structure parser if not already invoked
+      if (acc.trim()) {
+        vscode.postMessage({
+          command: 'llm_output',
+          text: acc
+        });
+      }
+      
+    } catch (e) {
+      removeLoader();
+      wrap.querySelector('.rendered').innerHTML = '<span style="color:#ff8fa3">' + escapeHtml(String(e)) + '</span>';
+    } finally {
+      enableInput();
+    }
+  }
+
+  function enableInput() {
+    sendBtn.disabled = false;
+    input.disabled = false;
+    input.placeholder = "Type your message...";
+    input.focus();
+  }
+
+  async function sendMessage(msg) {
+    const thinkingSelect = document.getElementById("Thinking");
+    let selectedValue = thinkingSelect.value;
+    if (!msg.trim()) return;
+    
+    // Disable send button during request to prevent multiple submissions
+    sendBtn.disabled = true;
+    input.disabled = false;
+    
+    addMessage('user', escapeHtml(msg));
+    input.value = '';
+
+    const {wrap, loader} = createAssistantPlaceholder();
+    let acc = '';
+    let loaderRemoved = false; // Track if loader has been removed
+
+    function removeLoader() {
+      if (!loaderRemoved && loader && loader.parentNode) {
+        loader.remove();
+        loaderRemoved = true;
+      }
+    }
+
+    try {
+      const resp = await fetch('http://localhost:8000/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: msg, 
+          conversation_id: conversationId, 
+          use_system_instructions: false, // Don't use system instructions for regular messages
+          stream: true 
+        })
+      });
+
+      if (!resp.body) {
+        wrap.innerHTML = 'No response'; 
+        removeLoader();
+        enableInput();
+        return;
+      }
+      
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split(/\r?\n/); 
+        buf = lines.pop();
+        
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          
+          if (payload === '[DONE]') {
+            removeLoader();
+            
+            // Invoke structure parser when response is fully generated
+            if (acc.trim()) {
+              vscode.postMessage({
+                command: 'llm_output',
+                text: acc
+              });
+            }
+            
+            enableInput();
+            return;
+          }
+          
+          try {
+            const obj = JSON.parse(payload);
+            if (obj.chunk) {
+              acc += obj.chunk;
+              wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
+              
+              chat.scrollTop = chat.scrollHeight;
+              
+              // Remove loader when first chunk arrives
+              if (!loaderRemoved) {
+                removeLoader();
+              }
+              
+              if (obj.done) {
+                // Invoke structure parser when done is true
+                console.log('Final chunk received, invoking structure parser.');
+                console.log('\n\n\nFinal response from chatbot.html :\n', acc);
+                if (acc.trim()) {
+                  vscode.postMessage({
+                    command: 'llm_output',
+                    text: acc
+                  });
+                }
+                
+                enableInput();
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e);
+          }
+        }
+      }
+
+      removeLoader();
+      wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
+      
+      // Additional safety check - invoke structure parser if not already invoked
+      if (acc.trim()) {
+        vscode.postMessage({
+          command: 'llm_output',
+          text: acc
+        });
+      }
+      
+    } catch (e) {
+      removeLoader();
+      wrap.querySelector('.rendered').innerHTML = '<span style="color:#ff8fa3">' + escapeHtml(String(e)) + '</span>';
+    } finally {
+      enableInput();
     }
   }
 
   sendBtn.onclick = () => sendMessage(input.value);
   input.addEventListener('keydown', e => {
-    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(input.value);}
+    if (e.key === 'Enter' && !e.shiftKey) { 
+      e.preventDefault(); 
+      sendMessage(input.value);
+    }
   });
 
-  addMessage('assistant','<div style="opacity:0.9">Hello! Type a question and press <strong>Send</strong>.</div>');
+  // Remove the initial welcome message since we're sending the auto message
+  // addMessage('assistant','<div style="opacity:0.9">Hello! Type a question and press <strong>Send</strong>.</div>');
 })();
 </script>
 </body>

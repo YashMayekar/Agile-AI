@@ -3,17 +3,119 @@
 <head>
 <meta charset="UTF-8" />
 <style>
-  body { color: white; background-color: #1e1e1e; padding: 1rem; font-family: sans-serif; }
-  button { background: #7c5cff; width: 100% ;border: none; padding: 0.5rem 1rem; border-radius: 5px; color: white; cursor: pointer; }
+  body { 
+    color: white; 
+    background-color: #1e1e1e; 
+    padding: 1rem; 
+    font-family: sans-serif;
+    margin: 0;
+  }
+  button { 
+    background: #7c5cff; 
+    width: 100%; 
+    border: none; 
+    padding: 0.5rem 1rem; 
+    border-radius: 5px; 
+    color: white; 
+    cursor: pointer; 
+    margin-bottom: 10px;
+  }
+  .chat-list {
+    margin-top: 10px;
+  }
+  .chat-item {
+    padding: 8px 12px;
+    margin: 4px 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    cursor: pointer;
+    border-left: 3px solid #7c5cff;
+  }
+  .chat-item:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  .chat-item.active {
+    background: rgba(124, 92, 255, 0.2);
+    border-left: 3px solid #00c8ff;
+  }
+  .refresh-btn {
+    background: #333;
+    margin-bottom: 15px;
+  }
 </style>
 </head>
 <body>
   <button id="newChatBtn">New Chat</button>
+  <button id="refreshBtn" class="refresh-btn">Refresh Chats</button>
+  <div class="chat-list" id="chatList">
+    <div style="padding: 10px; text-align: center; color: #888;">
+      Loading chats...
+    </div>
+  </div>
+
   <script>
     const vscode = acquireVsCodeApi();
-    document.getElementById("newChatBtn").addEventListener("click", () => {
-      vscode.postMessage({ command: "newChat" });
+    const chatListContainer = document.getElementById('chatList');
+
+    // New Chat button
+    document.getElementById("newChatBtn").addEventListener("click", () => { 
+      vscode.postMessage({ command: "newChat" }); 
     });
+
+    // Refresh button
+    document.getElementById("refreshBtn").addEventListener("click", () => {
+      vscode.postMessage({ command: "refreshChats" });
+    });
+
+    // Handle messages from extension
+    window.addEventListener('message', event => {
+      const message = event.data;
+      switch (message.command) {
+        case 'updateChatList':
+          updateChatList(message.conversations);
+          break;
+      }
+    });
+
+    function updateChatList(conversations) {
+      if (!conversations || conversations.length === 0) {
+        chatListContainer.innerHTML = `
+          <div style="padding: 10px; text-align: center; color: #888;">
+            No chats yet. Start a new chat!
+          </div>
+        `;
+        return;
+      }
+
+      chatListContainer.innerHTML = conversations.map(conv => `
+        <div class="chat-item" data-id="${conv.id}">
+          <div style="font-weight: bold;">Chat ${conv.id.slice(0, 8)}...</div>
+          <div style="font-size: 0.8em; color: #ccc;">
+            ${conv.messages && conv.messages.length > 0 
+              ? conv.messages[conv.messages.length - 1].message.slice(0, 50) + '...'
+              : 'Empty chat'
+            }
+          </div>
+          <div style="font-size: 0.7em; color: #888; margin-top: 4px;">
+            Messages: ${conv.messages ? conv.messages.length : 0}
+          </div>
+        </div>
+      `).join('');
+
+      // Add click listeners to chat items
+      chatListContainer.querySelectorAll('.chat-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const conversationId = item.getAttribute('data-id');
+          vscode.postMessage({ 
+            command: "loadChat", 
+            conversationId: conversationId 
+          });
+        });
+      });
+    }
+
+    // Initial load
+    vscode.postMessage({ command: "refreshChats" });
   </script>
 </body>
 </html>
