@@ -1,0 +1,39 @@
+type: agile-sprint
+version: 1
+
+sequence:
+
+  - id: "01"
+    name: backlog_creation
+    agent: pm
+    creates:
+      - backlog.md
+    next: "02"
+
+  - id: "02"
+    name: sprint_planning
+    agent: pm
+    requires:
+      - backlog.md
+    creates:
+      - sprint-plan.md
+    next: "03"
+
+  - id: "03"
+    name: sprint_execution
+    agent: developer
+    requires:
+      - sprint-plan.md
+    creates:
+      - implementation-report.md
+    next: "04"
+
+  - id: "04"
+    name: sprint_review
+    agent: analyst
+    next: "05"
+
+  - id: "05"
+    name: retrospective
+    agent: scrum-master
+    next: "02"
