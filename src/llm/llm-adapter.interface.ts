@@ -20,5 +20,6 @@ export interface LLMResponse {
 }
 
 export interface LLMAdapter {
-  generate(request: LLMRequest): Promise<LLMResponse>;
+  generate(params: { systemPrompt: string; userPrompt: string }): Promise<{ raw: string; message: string }>;
+  generateStream(params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<string, void, unknown>;
 }

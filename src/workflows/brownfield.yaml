@@ -1,0 +1,180 @@
+type: brownfield
+version: 2
+
+steps:
+  - id: 0
+    name: Initial Assessment
+    agent: orchestrator
+    notes: |
+      Greet User and gather initial information.
+      Assess enhancement request and gather initial information.
+      confirm enhancement details before proceeding.
+      Output must include `enhancement_type` field: "single", "small", or "major".
+    after: enhancement_request
+    next: 1
+    
+  - id: 1
+    name: Enhancement Classification
+    agent: analyst
+    notes: |
+      Determine enhancement complexity.
+      Output must include `classification` field: "single", "small", or "major".
+    after: classification
+
+  # Single story path
+  - id: 2a
+    name: Create Single Story
+    agent: pm
+    condition: enhancement_type == "single"
+    creates: [story.md]
+    next: 19   # end
+
+  # Small feature path
+  - id: 2b
+    name: Create Small Feature Epic
+    agent: pm
+    condition: enhancement_type == "small"
+    creates: [epic.md]
+    next: 19
+
+  # Major enhancement path
+  - id: 3
+    name: Documentation Check
+    agent: analyst
+    condition: enhancement_type == "major"
+    after: doc_adequate
+    next: 4
+
+  - id: 4
+    name: Project Analysis
+    agent: architect
+    condition: enhancement_type == "major" && doc_adequate == false
+    creates: [brownfield-architecture.md]
+    next: 5b
+
+  - id: 5a
+    name: PRD Creation (Existing Docs)
+    agent: pm
+    condition: enhancement_type == "major" && doc_adequate == true
+    creates: [prd.md]
+    next: 6
+
+  - id: 5b
+    name: PRD Creation (After Analysis)
+    agent: pm
+    condition: enhancement_type == "major" && doc_adequate == false
+    requires: [brownfield-architecture.md]
+    creates: [prd.md]
+    next: 6
+
+  - id: 6
+    name: Architecture Decision
+    agent: pm
+    condition: enhancement_type == "major"
+    requires: [prd.md]
+    after: arch_needed
+    next: 7
+
+  - id: 7
+    name: Architecture Document
+    agent: architect
+    condition: enhancement_type == "major" && arch_needed == true
+    requires: [prd.md]
+    creates: [architecture.md]
+    next: 8
+
+  - id: 8
+    name: Artifact Validation
+    agent: po
+    condition: enhancement_type == "major"
+    requires: [prd.md]
+    creates: [validation-report.md]
+    after: po_checklist_issues
+    next:
+      default: 10
+      condition: po_checklist_issues == true
+      conditionNext: 9
+
+  - id: 9
+    name: Update Documents
+    agent: pm
+    condition: enhancement_type == "major" && po_checklist_issues == true
+    requires: [validation-report.md, prd.md]
+    updates: [prd.md, architecture.md]
+    next: 8   # loop back to validation
+
+  - id: 10
+    name: Shard Documents
+    agent: po
+    condition: enhancement_type == "major"
+    requires: [prd.md]
+    after: stories
+    next: 11
+
+  # Story loop – uses currentStoryIndex and condition on step 11
+  - id: 11
+    name: Create Story File
+    agent: sm
+    condition: currentStoryIndex < stories.length
+    creates: ["story-{{storyIndex}}.md"]
+    requires: [sharded_docs]
+    next: 12
+
+  - id: 12
+    name: Story Review (Optional)
+    agent: pm
+    condition: user_wants_story_review == true
+    requires: ["story-{{storyIndex}}.md"]
+    updates: ["story-{{storyIndex}}.md"]
+    next: 13
+
+  - id: 13
+    name: Story Implementation
+    agent: dev
+    requires: ["story-{{storyIndex}}.md"]
+    creates: ["implementation-{{storyIndex}}/"]
+    next: 14
+
+  - id: 14
+    name: QA Review
+    agent: qa
+    requires: ["implementation-{{storyIndex}}/"]
+    after: qaLeftUnchecked
+    next:
+      default: 16
+      condition: qaLeftUnchecked == true
+      conditionNext: 15
+
+  - id: 15
+    name: Address QA Feedback
+    agent: dev
+    condition: qaLeftUnchecked == true
+    requires: ["implementation-{{storyIndex}}/"]
+    updates: ["implementation-{{storyIndex}}/"]
+    after: qaLeftUnchecked   # reset? handled by step 14 after
+    next: 14
+
+  - id: 16
+    name: Mark Story Complete
+    agent: sm
+    requires: ["implementation-{{storyIndex}}/"]
+    after: increment_story_index
+    next: 11   # try next story
+
+  - id: 17
+    name: All Stories Complete
+    agent: system
+    condition: currentStoryIndex >= stories.length
+    next: 18
+
+  - id: 18
+    name: Epic Retrospective (Optional)
+    agent: po
+    condition: user_requested_retrospective == true
+    creates: [epic-retrospective.md]
+    next: 19
+
+  - id: 19
+    name: Project Complete
+    agent: system
+    notes: "Workflow finished"

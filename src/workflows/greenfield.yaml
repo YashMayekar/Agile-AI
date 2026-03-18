@@ -1,226 +1,220 @@
+# greenfield.yaml
+# Dynamic workflow for greenfield projects
+# Each step is interpreted based on its dependencies and control fields.
+# State variables (like {{stories}}, {{storyIndex}}) are managed by the orchestrator.
+
 type: greenfield
-version: 1
-sequence:
-  - id: 01
-    step: Project Brief Creation
+version: 2                     # increased version to indicate new schema
+
+# Global variables that can be referenced in steps
+variables:
+  stories: []                  # will be populated after sharding
+  currentStoryIndex: 0
+  qaLeftUnchecked: false
+
+steps:
+  - id: 0
+    name: Initial Project Setup
+    agent: orchestrator
+    notes: |
+      Greet User and gather initial information.
+      confirm project details before proceeding.
+    next: 1
+    
+  - id: 1
+    name: Project Brief Creation
     agent: analyst
-    creates: 
-    - project-brief.md
+    creates:
+      - project-brief.md
     template: project-brief-tmpl
-    next: 02
-    optional_steps:
-    - brainstorming_session
-    notes: "Can do brainstorming first, then optional deep research before creating project brief. SAVE OUTPUT: Copy final project-brief.md to your project's docs/ folder."
+    notes: "Create project brief from user input."
 
-  - id: 02
-    step: Product Requirements Document (PRD) Creation
+  - id: 2
+    name: Product Requirements Document (PRD) Creation
     agent: pm
-    creates: 
-    - prd.md
-    requires: 
-    - project-brief.md
-    next: 03
-    return_id: 01
-    notes: "Creates PRD from project brief using prd-tmpl. SAVE OUTPUT: Copy final prd.md to your project's docs/ folder."
-
-  - id: 03
-    optional: true
-    agent: ux-expert
-    creates: 
-    - front-end-spec.md
-    requires: 
-    - prd.md
-    next: 05
-    optional_steps:
-    - user_research_prompt
-    notes: "Creates UI/UX specification using front-end-spec-tmpl. SAVE OUTPUT: Copy final front-end-spec.md to your project's docs/ folder."
-
-  - id: 04
-    optional: true
-    agent: ux-expert
-    creates: 
-    - v0_prompt.md
-    requires: 
-    - front-end-spec.md
-    next: 05
-    condition: user_wants_ai_generation
-    notes: "OPTIONAL BUT RECOMMENDED: Generate AI UI prompt for tools like v0, Lovable, etc. Use the generate-ai-frontend-prompt task. User can then generate UI in external tool and download project structure."
-
-  - id: 05
-    agent: architect
-    creates: 
-    - fullstack-architecture.md
     requires:
-    - prd.md
-    - front-end-spec.md
-    next: 07
-    optional_steps:
-    - technical_research_prompt
-    - review_generated_ui_structure
-    notes: "Creates comprehensive architecture using fullstack-architecture-tmpl. If user generated UI with v0/Lovable, can incorporate the project structure into architecture. May suggest changes to PRD stories or new stories. SAVE OUTPUT: Copy final fullstack-architecture.md to your project's docs/ folder."
+      - project-brief.md
+    creates:
+      - prd.md
+    template: prd-tmpl
+    notes: "Generate PRD from project brief."
 
-  - id: 06
-    optional: true
+  - id: 3
+    name: UI/UX Specification Creation
+    agent: ux-expert
+    requires:
+      - prd.md
+    creates:
+      - front-end-spec.md
+    template: front-end-spec-tmpl
+    notes: "Create UI/UX specification."
+
+  - id: 4
+    name: Fullstack Architecture Creation
+    agent: architect
+    requires:
+      - prd.md
+      - front-end-spec.md
+    creates:
+      - fullstack-architecture.md
+    template: fullstack-architecture-tmpl
+    notes: "Design fullstack architecture, may suggest PRD updates."
+
+  - id: 5
+    name: PRD Update Based on Architecture Feedback
     agent: pm
-    updates: 
-    - prd.md
-    requires: 
-    - fullstack-architecture.md
-    next: 07
-    condition: architecture_suggests_prd_changes
-    notes: "If architect suggests story changes, update PRD and re-export the complete unredacted prd.md to docs/ folder."
+    requires:
+      - fullstack-architecture.md
+      - prd.md
+    updates:
+      - prd.md
+    template: prd-tmpl
+    notes: "Incorporate architecture feedback into PRD."
 
-  - id: 07
+  - id: 6
+    name: Documentation Review and Validation
     agent: po
-    validates: 
-    - all_artifacts
-    requires: 
-    - po-master-checklist
-    next: 11
-    notes: "Validates all documents for consistency and completeness. May require updates to any document."
+    requires:
+      - po-master-checklist
+      - all_documents                      # special keyword meaning all docs created so far
+    creates:
+      - validation-report.md
+    template: validation-report-tmpl
+    notes: "Validate all documents for consistency."
 
-  - id: 08
-    agent: various
-    updates: any_flagged_documents
-    condition: po_checklist_issues
-    notes: "If PO finds issues, return to relevant agent to fix and re-export updated documents to docs/ folder."
+  - id: 7
+    name: PRD Sharding for Development
+    agent: po
+    requires:
+      - all_documents
+    creates:
+      - sharded_docs                         # meta‑artifact, triggers population of stories list
+    template: sharding-tmpl
+    notes: "Split PRD into epics/stories. After this step, the 'stories' variable is set."
+    after: |
+      # This block is executed by the orchestrator after the step completes
+      state.dynamicContext.stories = extract_stories_from_output()   # pseudo‑code
 
-  - id: 09
-    step: project_setup_guidance
-    action: guide_project_structure
-    condition: user_has_generated_ui
-    notes: "If user generated UI with v0/Lovable: For polyrepo setup, place downloaded project in separate frontend repo alongside backend repo. For monorepo, place in apps/web or packages/frontend directory. Review architecture document for specific guidance."
+  # ------------------------------------------------------------------------
+  # Story development loop – steps 8 to 15 are repeated for each story
+  # The loop is controlled by a special step that expands into instances.
+  # ------------------------------------------------------------------------
+  - id: 8
+    name: Epic Creation
+    agent: sm
+    # This step runs once per story, creating a story file named dynamically
+    loop:
+      over: stories                     # iterate over the list stored in state
+      as: storyIndex                    # variable name for the current index
+    creates:
+      - "story-{{storyIndex}}.md"        # filename includes the index
+    template: story-tmpl
+    requires:
+      - sharded_docs
+    notes: "Create a story file for epic {{storyIndex}}."
+
+  - id: 9
+    name: Story Review and Approval
+    agent: pm
+    requires:
+      - "story-{{storyIndex}}.md"
+    updates:
+      - "story-{{storyIndex}}.md"
+    template: story-tmpl
+    notes: "Review and approve the story (changes status from Draft to Approved)."
+    # This step also runs once per story; it is implicitly part of the loop because
+    # it depends on a loop‑generated document. The orchestrator will treat it as
+    # a separate instance for each story (like 9‑1, 9‑2, ...).
 
   - id: 10
-    step: development_order_guidance
-    action: guide_development_sequence
-    notes: "Based on PRD stories: If stories are frontend-heavy, start with frontend project/directory first. If backend-heavy or API-first, start with backend. For tightly coupled features, follow story sequence in monorepo setup. Reference sharded PRD epics for development order."
+    name: Story Implementation
+    agent: dev
+    requires:
+      - "story-{{storyIndex}}.md"
+      - implementation-rules.md
+    creates:
+      - "implementation-{{storyIndex}}/"     # directory for this story's files
+    # Actual file creation is handled by the agent; we track the directory as created
+    template: implementation-tmpl
+    notes: "Implement the story."
 
   - id: 11
-    agent: po
-    action: shard_documents
-    creates: 
-    - sharded_docs
-    requires: 
-    - all_artifacts
-    next: 12
-    notes:
-    Shard documents for IDE development:
-    - Option A: Use PO agent to shard @po then ask to shard docs/prd.md
-    - Option B: Manual Drag shard-doc task + docs/prd.md into chat
-    - Creates docs/prd/ and docs/architecture/ folders with sharded content
+    name: QA Review of Implementation
+    agent: qa
+    requires:
+      - "implementation-{{storyIndex}}/"
+    # QA may update implementation files
+    updates:
+      - "implementation-{{storyIndex}}/"
+    template: implementation-tmpl
+    notes: "Review implementation, may leave unchecked items."
+    after: |
+      # After QA, set qaLeftUnchecked based on review outcome
+      state.dynamicContext.qaLeftUnchecked = review_had_unchecked_items()
 
   - id: 12
-    agent: sm
-    action: create_story
-    creates: 
-    - story.md
-    requires: 
-    - sharded_docs
-    next: 13
-    repeats: for_each_epic
-    notes: 
-    Story creation cycle:
-    - SM Agent (New Chat): sm → *create
-    - Creates next story from sharded docs
-    - Story starts in "Draft" status
+    name: Addressing QA Feedback
+    agent: dev
+    # This step runs only if qaLeftUnchecked is true
+    condition:
+      variable: qaLeftUnchecked
+      equals: true
+    requires:
+      - "implementation-{{storyIndex}}/"
+    updates:
+      - "implementation-{{storyIndex}}/"
+    template: implementation-tmpl
+    notes: "Fix issues left by QA."
+    after: |
+      # After fixing, we may need to loop back to QA (step 11) for final review.
+      # This is handled by the next field.
+    next:
+      default: 13                        # go to final step if condition false
+      condition: "qaLeftUnchecked"        # if still unchecked, repeat QA
+      conditionNext: 11
 
   - id: 13
-    agent: pm
-    action: review_draft_story
-    updates: 
-    - story.md
-    requires: 
-    - story.md
-    optional: true
-    next: 14
-    condition: user_wants_story_review
-    OPTIONAL: 
-    - Review and approve draft story
-    - NOTE story-review task coming soon
-    - Review story completeness and alignment
-    - Update story status Draft → Approved  
+    name: Mark Story Complete
+    agent: sm
+    requires:
+      - "implementation-{{storyIndex}}/"
+    updates:
+      - "story-{{storyIndex}}.md"
+    template: story-tmpl
+    notes: "Update story status to Done."
+    after: |
+      # Increment story index for the next iteration
+      state.dynamicContext.currentStoryIndex += 1
+    # After this step, the orchestrator checks if there are more stories.
+    # If yes, it will restart the loop at step 8 with the next index.
+    # If no, it proceeds to step 16.
 
-  - id: 14
-    agent: dev
-    action: implement_story
-    creates: 
-    - implementation_files
-    requires: 
-    - story.md
-    Dev Agent (New Chat): 
-    - dev
-    - Implements approved story
-    - Updates File List with all changes
-    - Marks story as "Review" when complete
-
-  - id: 15
-    agent: qa
-    action: review_implementation
-    updates: 
-    - implementation_files
-    requires: 
-    - implementation_files
-    optional: true
-    OPTIONAL: 
-    - QA Agent (New Chat) @qa → review-story
-    - Senior dev review with refactoring ability
-    - Fixes small issues directly
-    - Leaves checklist for remaining items
-    - Updates story status (Review → Done or stays Review)
+  # ------------------------------------------------------------------------
+  # End of story loop
+  # ------------------------------------------------------------------------
 
   - id: 16
-    agent: dev
-    action: address_qa_feedback
-    updates: implementation_files
-    condition: qa_left_unchecked_items
-    notes: 
-    If QA left unchecked items:
-    - Dev Agent (New Chat): Address remaining items
-    - Return to QA for final approval
+    name: All Stories Complete
+    agent: system
+    requires:
+      - condition: "currentStoryIndex >= stories.length"
+    # This step is a dummy; it just marks that the loop is finished.
+    notes: "All stories have been processed."
 
   - id: 17
-    step: repeat_development_cycle
-    action: continue_for_all_stories
-    notes: 
-    - Repeat story cycle (SM → Dev → QA) for all epic stories
-    - Continue until all stories in PRD are complete
+    name: Epic Retrospective (Optional)
+    agent: po
+    condition:
+      variable: user_requested_retrospective    # could be set via user input
+      equals: true
+    creates:
+      - epic-retrospective.md
+    template: retrospective-tmpl
+    notes: "Optional retrospective after epic completion."
 
   - id: 18
-    agent: po
-    action: epic_retrospective
-    creates: epic-retrospective.md
-    condition: epic_complete
-    optional: true
-    notes:
-    OPTIONAL:
-    - After epic completion
-    - NOTE epic-retrospective task coming soon
-    - Validate epic was completed correctly
-    - Document learnings and improvements
-
-  - id: 19
-    step: workflow_end
-    action: project_complete
-    notes:
-    - All stories implemented and reviewed!
-    - Project development phase complete.
-
-decision_guidance:
-when_to_use:
-    - Building production-ready applications
-    - Multiple team members will be involved
-    - Complex feature requirements
-    - Need comprehensive documentation
-    - Long-term maintenance expected
-    - Enterprise or customer-facing applications
-
-handoff_prompts:
-    analyst_to_pm: "Project brief is complete. Save it as docs/project-brief.md in your project, then create the PRD."
-    pm_to_ux: "PRD is ready. Save it as docs/prd.md in your project, then create the UI/UX specification."
-    ux_to_architect: "UI/UX spec complete. Save it as docs/front-end-spec.md in your project, then create the fullstack architecture."
-    architect_review: "Architecture complete. Save it as docs/fullstack-architecture.md. Do you suggest any changes to the PRD stories or need new stories added?"
-    architect_to_pm: "Please update the PRD with the suggested story changes, then re-export the complete prd.md to docs/."
-    updated_to_po: "All documents ready in docs/ folder. Please validate all artifacts for consistency."
-    po_issues: "PO found issues with [document]. Please return to [agent] to fix and re-save the updated document."
-    complete: "All planning artifacts validated and saved in docs/ folder. Move to IDE environment to begin development."
+    name: Project Complete
+    agent: system
+    requires:
+      - id: 16                                # all stories done
+    notes: "All development phases finished."
