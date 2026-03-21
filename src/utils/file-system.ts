@@ -17,6 +17,10 @@ export class FileSystem {
     }
   }
 
+  static readFile(filePath: string): string {
+    return fs.readFileSync(filePath, 'utf-8');
+  }
+
   static readJSON(filePath: string) {
     const content = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(content);
