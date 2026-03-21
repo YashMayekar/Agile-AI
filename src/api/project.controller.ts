@@ -1,47 +1,24 @@
-/**
- * Project Controller
- *
- * API Layer.
- * Receives frontend requests.
- * Delegates to Orchestrator.
- */
-
 import express from "express";
-import { Orchestrator } from "../core/orchestrator";
 import { v4 as uuidv4 } from "uuid";
 import { FileSystem } from "../utils/file-system";
 import { ProjectState } from "../core/project-state/project-state.model";
 import path from "path";
-import { BrownfieldAnalyzer } from "../core/brownfield-analyzer";
-import { logEvent, logger } from "../utils/logger";
+import { logger } from "../utils/logger";
+import { OllamaAdapter } from "../llm/ollama.adapter";
 
 const MODULE = "project.controller.ts";
-
 const router = express.Router();
 
-/**
- * POST /api/project/:projectId/message
- * Non‑streaming message handling.
- */
-router.post("/:projectId/message", async (req, res) => {
-  const { projectId } = req.params;
-  const { userInput } = req.body;
-
-  try {
-    const result = await Orchestrator.handleUserInput(projectId, userInput);
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// Cache to hold LLM instances per project
+const llmInstances = new Map<string, OllamaAdapter>();
 
 /**
  * POST /api/project/init
  * Creates a new project and returns the initial greeting.
  */
 router.post("/init", async (req, res) => {
-  const { tree, mode = "greenfield" } = req.body;
-  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED: Initializing new project in ${mode} mode...`);
+  const { tree } = req.body;
+  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED - Initializing new project with provided file tree`);
 
   const projectId = uuidv4();
   const projectPath = path.join("projects", projectId);
@@ -52,13 +29,12 @@ router.post("/init", async (req, res) => {
   // Initial state compatible with dynamic workflow
   const initialState: ProjectState = {
     projectId,
-    mode: mode as "greenfield" | "brownfield",
+    mode: null,
     phase: "planning",
     currentStepId: 0,
-    workflowFile: mode === "brownfield" ? "brownfield.yaml" : "greenfield.yaml",
+    workflowFile: "",
     documents: {},
     completedSteps: [],
-    history: [],
     contextMemory: {
       summary: "",
       decisions: [],
@@ -72,32 +48,60 @@ router.post("/init", async (req, res) => {
     }
   };
 
+  const history = { History: [] };
+
   FileSystem.writeJSON(path.join(projectPath, "state.json"), initialState);
+  FileSystem.writeJSON(path.join(projectPath, "history.txt"), history);
 
   try {
+    // Create the LLM instance once and store it in the cache
+    const llm = new OllamaAdapter();
+    llmInstances.set(projectId, llm);
 
-
-    // Get initial greeting from orchestrator
-    // const result = await Orchestrator.handleUserInput(projectId, "Greet Me in short");
-    // res.json( projectId );
-
-    const greetingResult = await Orchestrator.handleUserInput(projectId, "Greet me briefly");
-  const greeting = greetingResult.message + greetingResult.content;  // adjust according to actual return type
-
-  res.json({ projectId, greeting });
-    // If brownfield, analyze asynchronously
-    if (mode === "brownfield") {
-      (async () => {
-        const analysis = await BrownfieldAnalyzer.analyze(projectPath);
-        const analysisPath = path.join(projectPath, "docs/project-analysis.md");
-        FileSystem.writeFile(analysisPath, analysis);
-        logEvent("BROWNFIELD_ANALYSIS_COMPLETE", { projectId });
-      })().catch(err => logger.error(`[${MODULE}] Brownfield analysis failed: ${err.message}`));
-    }
-
+    // If you have a greeting, you could generate it here and send it back
+    // For now, just return the projectId
+    res.json({ projectId: projectId });
   } catch (error: any) {
-    logger.error(`[${MODULE}] Failed to generate greeting: ${error.message}`);
+    logger.error(`[${MODULE}] Failed to initialize project: ${error.message}`);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/project/:projectId/m/s
+ * Non‑streaming message handling.
+ */
+router.post("/:projectId/m/s", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+
+  const { projectId } = req.params;
+  const { userInput } = req.body;
+
+  logger.warn(`[${MODULE}] Received streaming message for project ${projectId}: ${userInput}`);
+
+  // Retrieve the LLM instance for this project
+  const llm = llmInstances.get(projectId);
+  if (!llm) {
+    res.status(404).json({ error: "Project not initialized or LLM instance missing" });
+    return;
+  }
+
+  try {
+    const stream = llm.generate({
+      userPrompt: userInput,
+      systemPrompt: "You are a helpful assistant."
+    });
+
+    for await (const chunk of stream) {
+      res.write(JSON.stringify(chunk) + "\n");
+    }
+  } catch (error: any) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.write(JSON.stringify({ error: error.message }) + "\n");
+      res.end();
+    }
   }
 });
 

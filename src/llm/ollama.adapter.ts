@@ -1,29 +1,10 @@
 import { LLMAdapter } from "./llm-adapter.interface";
 import { logger } from "../utils/logger";
-import { log } from "console";
-
 
 export class OllamaAdapter implements LLMAdapter {
-  private model: string = "llama3.1:8b"; // or configurable
-  
-  async generate(params: { systemPrompt: string; userPrompt: string }): Promise<{ raw: string; message: string }> {
-    logger.debug(`[ollama.adapter.ts] Sending request to Ollama with model ${this.model}`);
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.model,
-        system: params.systemPrompt,
-        prompt: params.userPrompt,
-        stream: false,
-      }),
-    });
-    const data = await response.json();
-    logger.debug(`[ollama.adapter.ts] Received response from Ollama: ${data.response.substring(0, 100)}...`);
-    return { raw: data.response, message: data.response };
-  }
+  private model: string = "llama3.1:8b";
 
-  async *generateStream(params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<string> {
+  async *generate(params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }> {
     logger.debug(`[ollama.adapter.ts] Starting streaming generation with model ${this.model}`);
     const response = await fetch('http://localhost:11434/api/generate', {
       method: 'POST',
@@ -35,27 +16,37 @@ export class OllamaAdapter implements LLMAdapter {
         stream: true,
       }),
     });
+
     if (!response.body) throw new Error('No response body');
     const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
     logger.debug(`[ollama.adapter.ts] Connected to Ollama streaming endpoint`);
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
       buffer += decoder.decode(value, { stream: true });
-      try{
-        const data = JSON.parse(buffer);
-        if (data.response) {
-          logger.debug(`${data.response}\n`);          
-          yield data.response;
-          buffer = '';
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        try {
+          const data = JSON.parse(line);
+          // Yield each chunk as it arrives
+          yield { res: data.response || null, done: data.done === true };
+          // If this is the final chunk, stop the generator
+          if (data.done) return;
+        } catch (err) {
+          logger.warn(`[ollama.adapter.ts] Failed to parse chunk: ${line}`, err);
         }
       }
-      catch(e){
-        // Incomplete JSON, wait for more data
-      }      
-    } 
+    }
+
+    // If the stream ends without a done flag, still signal completion
+    yield { res: null, done: true };
   }
 }

@@ -13,15 +13,21 @@ import { repairJSON } from "../utils/json-repair";
 import { OllamaAdapter } from "../llm/ollama.adapter";
 import { ProjectState } from "./project-state/project-state.model";
 import { OrchestratorAgent } from "../agents/orchestrator.agent";
-import { log } from "console";
 
 const MODULE = "orchestrator.ts";
 
 export class Orchestrator {
   /**
-   * Handle user input (non‑streaming). Returns the parsed action and message.
+   * Handle user input (streaming). Returns an AsyncGenerator that yields tokens.
+   * @param projectId - The project identifier
+   * @param userInput - The user's message
+   * @param agentOverride - Optional agent name to bypass workflow and chat directly
    */
-  static async handleUserInput(projectId: string, userInput: string): Promise<any> {
+  static async *handleUserInput(
+    projectId: string, 
+    userInput: string,
+    agentOverride?: string
+  ): AsyncGenerator<string, any, unknown> {
     ExecutionLock.acquire(projectId);
     let fullRaw = '';
 
@@ -29,6 +35,7 @@ export class Orchestrator {
       logger.info(`[${MODULE}] Processing input for project: ${projectId}`);
       let state = StateManager.load(projectId);
 
+      logger.warn(`\n\nState loaded for project ${projectId}: ${JSON.stringify(state)}...`);
       // ----- MIGRATION / DEFENSIVE INIT -----
       if (!state.contextMemory) {
         state.contextMemory = { summary: "", decisions: [], architectureNotes: [] };
@@ -36,43 +43,60 @@ export class Orchestrator {
       if (!state.dynamicContext) {
         state.dynamicContext = { stories: [], currentStoryIndex: 0, qaLeftUnchecked: false };
       }
-      if (state.currentStepId === null || state.currentStepId === undefined) {
-        const workflow = WorkflowEngine.loadWorkflow(state.workflowFile);
-        state.currentStepId = WorkflowEngine.findInitialStep(workflow, state);
-        if (!state.currentStepId) {
-          throw new Error("No executable step found – workflow may be complete.");
+      // Ensure dialogue history exists
+      if (!state.dialogueHistory) {
+        state.dialogueHistory = [];
+      }
+
+      // ----- AGENT OVERRIDE: direct chat with named agent -----
+      if (agentOverride) {
+        logger.info(`[${MODULE}] Agent override detected, entering direct chat with: ${agentOverride}`);
+        return yield* this.directChat(projectId, state, agentOverride, userInput);
+      }
+
+      // ----- WORKFLOW PRECONDITIONS -----
+      let workflow;
+      let step;
+      let currentStepId;
+      try {
+        workflow = WorkflowEngine.loadWorkflow(state.workflowFile);
+        if (state.currentStepId === null || state.currentStepId === undefined) {
+          state.currentStepId = WorkflowEngine.findInitialStep(workflow, state);
+          if (!state.currentStepId) {
+            throw new Error("No executable step found – workflow may be complete.");
+          }
         }
+
+        currentStepId = state.currentStepId;
+        let baseStepId: number | null = null;
+        if (typeof currentStepId === 'string') {
+          baseStepId = parseInt(currentStepId.split('-')[0], 10);
+        } else if (typeof currentStepId === 'number') {
+          baseStepId = currentStepId;
+        } else {
+          throw new Error(`[${MODULE}] Invalid currentStepId type: ${typeof currentStepId}`);
+        }
+
+        step = WorkflowEngine.getStepById(workflow, baseStepId!);
+        if (step.condition && !WorkflowEngine.evaluateCondition(step.condition, state)) {
+          throw new Error(`Step ${currentStepId} condition not met.`);
+        }
+      } catch (preconditionError: any) {
+        logger.warn(`[${MODULE}] Workflow precondition failed, falling back to direct chat: ${preconditionError.message}`);
+        return yield* this.directChat(projectId, state, 'orchestrator', userInput);
       }
 
-      const workflow = WorkflowEngine.loadWorkflow(state.workflowFile);
-      const currentStepId = state.currentStepId;
-      let baseStepId: number | null = null;
-      if (typeof currentStepId === 'string') {
-        baseStepId = parseInt(currentStepId.split('-')[0], 10);
-      } else if (typeof currentStepId === 'number') {
-        baseStepId = currentStepId;
-      } else {
-        throw new Error(`[${MODULE}] Invalid currentStepId type: ${typeof currentStepId}`);
-      }
-
-      const step = WorkflowEngine.getStepById(workflow, baseStepId!);
-      if (step.condition && !WorkflowEngine.evaluateCondition(step.condition, state)) {
-        throw new Error(`Step ${currentStepId} condition not met.`);
-      }
-
+      // ----- NORMAL WORKFLOW EXECUTION -----
       const context = ContextBuilder.build(state, step, userInput);
       const llm = new OllamaAdapter();
       const agent = this.createAgent(step.agent, llm);
 
-      // Generate full response (non‑streaming)
-      const response = await agent.executeStream(context);
-      logger.debug(`[${MODULE}] Received response stream from agent ${step.agent}`);
-      logger.debug(`[${MODULE}] Starting to read response stream...`);
-      logger.debug(`[${MODULE}] ${response}`);
+      // Generate full response (streaming)
+      const response = agent.executeStream(context);
       for await (const chunk of response) {
+        yield chunk;
         fullRaw += chunk;
       }
-      
 
       logger.debug(`[${MODULE}] Full raw response received:\n${fullRaw}`);
 
@@ -91,7 +115,7 @@ export class Orchestrator {
       }
 
       // Add history entry using the message from the action
-      state = StateManager.addHistory(state, currentStepId, step.agent, parsedAction.message || "No summary provided");
+      state = await StateManager.addHistory(projectId, state, currentStepId, step.agent, parsedAction.message || "No summary provided");
 
       // Apply after-step logic
       state = StateManager.applyAfterStep(state, step, parsedAction);
@@ -118,16 +142,56 @@ export class Orchestrator {
       return {
         message: parsedAction.message,
         action: parsedAction,
-        nextStep: nextStepId,
         content: content
       };
 
     } catch (error: any) {
       logger.error(`[${MODULE}] Processing failed: ${error.message}`);
-      throw error;
+      // Final fallback – direct chat with orchestrator
+      const state = StateManager.load(projectId); // reload in case of partial changes
+      return yield* this.directChat(projectId, state, 'orchestrator', userInput);
     } finally {
       ExecutionLock.release(projectId);
     }
+  }
+
+  /**
+   * Direct chat with a named agent, maintaining conversation history.
+   * Yields tokens as they arrive and updates state.dialogueHistory.
+   */
+  private static async *directChat(
+    projectId: string,
+    state: ProjectState,
+    agentType: string,
+    userInput: string
+  ): AsyncGenerator<string, any, unknown> {
+    logger.info(`[${MODULE}] Direct chat with agent: ${agentType}`);
+    const llm = new OllamaAdapter();
+    const agent = this.createAgent(agentType, llm);
+    const systemPrompt = agent.getSystemPrompt();
+
+    // Build message list: system + history + new user input
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+      ...(state.dialogueHistory || []).map(entry => ({ role: entry.role, content: entry.content })),
+      { role: 'user', content: userInput }
+    ];
+
+    // Stream response
+    let fullResponse = '';
+
+    // Update dialogue history
+    if (!state.dialogueHistory) state.dialogueHistory = [];
+    state.dialogueHistory.push({ role: 'user', content: userInput });
+    state.dialogueHistory.push({ role: 'assistant', content: fullResponse });
+    StateManager.save(projectId, state);
+
+    // Return a result compatible with existing caller
+    return {
+      message: fullResponse,
+      action: { device: 'client', action: 'RESPONSE', message: fullResponse, path: null, content: null },
+      content: null
+    };
   }
 
   /**
