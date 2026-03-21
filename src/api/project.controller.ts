@@ -4,6 +4,7 @@ import { FileSystem } from "../utils/file-system";
 import { ProjectState } from "../core/project-state/project-state.model";
 import path from "path";
 import { logger } from "../utils/logger";
+import { Orchestrator } from "../core/orchestrator";
 import { OllamaAdapter } from "../llm/ollama.adapter";
 
 const MODULE = "project.controller.ts";
@@ -14,11 +15,11 @@ const llmInstances = new Map<string, OllamaAdapter>();
 
 /**
  * POST /api/project/init
- * Creates a new project and returns the initial greeting.
+ * Creates a new project and returns the project ID.
  */
 router.post("/init", async (req, res) => {
   const { tree } = req.body;
-  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED - Initializing new project with provided file tree`);
+  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED - Initializing new project`);
 
   const projectId = uuidv4();
   const projectPath = path.join("projects", projectId);
@@ -26,7 +27,7 @@ router.post("/init", async (req, res) => {
   FileSystem.ensureDir(projectPath);
   FileSystem.ensureDir(path.join(projectPath, "docs"));
 
-  // Initial state compatible with dynamic workflow
+  // Initial state (kept for compatibility)
   const initialState: ProjectState = {
     projectId,
     mode: null,
@@ -48,28 +49,19 @@ router.post("/init", async (req, res) => {
     }
   };
 
-  const history = { History: [] };
-
   FileSystem.writeJSON(path.join(projectPath, "state.json"), initialState);
-  FileSystem.writeJSON(path.join(projectPath, "history.txt"), history);
+  FileSystem.writeFile(path.join(projectPath, "history.txt"), "");
 
-  try {
-    // Create the LLM instance once and store it in the cache
-    const llm = new OllamaAdapter();
-    llmInstances.set(projectId, llm);
+  // Create and store the LLM instance for this project
+  const llm = new OllamaAdapter();
+  llmInstances.set(projectId, llm);
 
-    // If you have a greeting, you could generate it here and send it back
-    // For now, just return the projectId
-    res.json({ projectId: projectId });
-  } catch (error: any) {
-    logger.error(`[${MODULE}] Failed to initialize project: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
+  res.json({ projectId });
 });
 
 /**
  * POST /api/project/:projectId/m/s
- * Non‑streaming message handling.
+ * Non‑streaming message handling (streaming via generator).
  */
 router.post("/:projectId/m/s", async (req, res) => {
   res.setHeader("Content-Type", "application/json");
@@ -79,7 +71,7 @@ router.post("/:projectId/m/s", async (req, res) => {
 
   logger.warn(`[${MODULE}] Received streaming message for project ${projectId}: ${userInput}`);
 
-  // Retrieve the LLM instance for this project
+  // Retrieve the cached LLM instance for this project
   const llm = llmInstances.get(projectId);
   if (!llm) {
     res.status(404).json({ error: "Project not initialized or LLM instance missing" });
@@ -87,14 +79,11 @@ router.post("/:projectId/m/s", async (req, res) => {
   }
 
   try {
-    const stream = llm.generate({
-      userPrompt: userInput,
-      systemPrompt: "You are a helpful assistant."
-    });
-
+    const stream = Orchestrator.handleUserInput(projectId, userInput, llm);
     for await (const chunk of stream) {
       res.write(JSON.stringify(chunk) + "\n");
     }
+    res.end();
   } catch (error: any) {
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });

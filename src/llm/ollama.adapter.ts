@@ -2,7 +2,7 @@ import { LLMAdapter } from "./llm-adapter.interface";
 import { logger } from "../utils/logger";
 
 export class OllamaAdapter implements LLMAdapter {
-  private model: string = "llama3.1:8b";
+  private model: string = "gpt-oss:20b";
 
   async *generate(params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }> {
     logger.debug(`[ollama.adapter.ts] Starting streaming generation with model ${this.model}`);
@@ -22,7 +22,7 @@ export class OllamaAdapter implements LLMAdapter {
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
-    logger.debug(`[ollama.adapter.ts] Connected to Ollama streaming endpoint`);
+    logger.debug(`[ollama.adapter.ts] Streaming response`);
 
     while (true) {
       const { done, value } = await reader.read();
