@@ -4,52 +4,74 @@
 # State variables (like {{stories}}, {{storyIndex}}) are managed by the orchestrator.
 
 type: greenfield
-version: 2                     # increased version to indicate new schema
+version: 3                     # updated to reflect corrected workflow structure
 
 # Global variables that can be referenced in steps
 variables:
   stories: []                  # will be populated after sharding
   currentStoryIndex: 0
   qaLeftUnchecked: false
+  user_requested_retrospective: false   # can be set via user input
 
 steps:
+  # ------------------------------------------------------------
+  # Initial project setup and documentation creation (linear flow)
+  # ------------------------------------------------------------
   - id: 0
+    prev: null
     name: Initial Project Setup
     agent: orchestrator
+    requires: null
+    creates: null
+    templete: null
     notes: |
       Greet User and gather initial information.
-      confirm project details before proceeding.
-    next: 1
-    
+      Confirm project details before proceeding.
+      Show the user what are the next steps they can consider.
+    next: [1,2,3,4]
+
   - id: 1
+    prev: [0]
     name: Project Brief Creation
     agent: analyst
+    requires: null
     creates:
       - project-brief.md
     template: project-brief-tmpl
-    notes: "Create project brief from user input."
+    notes: |
+      Gather the project details from the user.
+      Confirm project details before proceeding.
+      Create project brief from user input.
+    next: [2]
 
   - id: 2
+    prev: [1]
     name: Product Requirements Document (PRD) Creation
     agent: pm
     requires:
       - project-brief.md
     creates:
       - prd.md
-    template: prd-tmpl
+    template:
+      - prd-tmpl.md
     notes: "Generate PRD from project brief."
+    next: [3]
 
   - id: 3
+    prev: [2]
     name: UI/UX Specification Creation
     agent: ux-expert
     requires:
       - prd.md
     creates:
       - front-end-spec.md
-    template: front-end-spec-tmpl
+    template:
+      - front-end-spec-tmpl.md
     notes: "Create UI/UX specification."
+    next: [4]
 
   - id: 4
+    prev: [2, 3]               # needs both PRD and UI/UX spec
     name: Fullstack Architecture Creation
     agent: architect
     requires:
@@ -57,63 +79,76 @@ steps:
       - front-end-spec.md
     creates:
       - fullstack-architecture.md
-    template: fullstack-architecture-tmpl
+    template: 
+      - fullstack-architecture-tmpl.md
     notes: "Design fullstack architecture, may suggest PRD updates."
+    next: [5,6]
 
   - id: 5
+    prev: [4, 3]
     name: PRD Update Based on Architecture Feedback
     agent: pm
     requires:
       - fullstack-architecture.md
       - prd.md
-    updates:
+    creates:
       - prd.md
-    template: prd-tmpl
+    template: 
+      - prd-tmpl.md
     notes: "Incorporate architecture feedback into PRD."
+    next: [6]
 
   - id: 6
+    prev: [5]
     name: Documentation Review and Validation
     agent: po
     requires:
-      - po-master-checklist
-      - all_documents                      # special keyword meaning all docs created so far
+      - fullstack-architecture.md
+      - prd.md                      # special keyword meaning all docs created so far
+      - project-brief.md
     creates:
       - validation-report.md
-    template: validation-report-tmpl
+    template: 
+      - validation-report-tmpl.md
     notes: "Validate all documents for consistency."
+    next: [7]
 
   - id: 7
+    prev: [6]
     name: PRD Sharding for Development
     agent: po
     requires:
-      - all_documents
+      - fullstack-architecture.md
+      - prd.md                      
+      - project-brief.md
     creates:
-      - sharded_docs                         # meta‑artifact, triggers population of stories list
-    template: sharding-tmpl
+      - sharded_docs.md                         # meta‑artifact, triggers population of stories list
+    template: 
+      - sharded_docs-tmpl.md
     notes: "Split PRD into epics/stories. After this step, the 'stories' variable is set."
-    after: |
-      # This block is executed by the orchestrator after the step completes
-      state.dynamicContext.stories = extract_stories_from_output()   # pseudo‑code
+    next: [8]                              # proceed to first story
 
-  # ------------------------------------------------------------------------
-  # Story development loop – steps 8 to 15 are repeated for each story
+  # ------------------------------------------------------------
+  # Story development loop – steps 8 to 13 are repeated for each story
   # The loop is controlled by a special step that expands into instances.
-  # ------------------------------------------------------------------------
+  # ------------------------------------------------------------
   - id: 8
+    prev: [7]                             # must run after sharding
     name: Epic Creation
     agent: sm
-    # This step runs once per story, creating a story file named dynamically
+    requires:
+      - sharded_docs.md
+    creates:
+      - "story-{{storyIndex}}.md"        # filename includes the index
+    template: story-tmpl.md
     loop:
       over: stories                     # iterate over the list stored in state
       as: storyIndex                    # variable name for the current index
-    creates:
-      - "story-{{storyIndex}}.md"        # filename includes the index
-    template: story-tmpl
-    requires:
-      - sharded_docs
     notes: "Create a story file for epic {{storyIndex}}."
+    next: [9,8]
 
   - id: 9
+    prev: null
     name: Story Review and Approval
     agent: pm
     requires:
@@ -122,11 +157,10 @@ steps:
       - "story-{{storyIndex}}.md"
     template: story-tmpl
     notes: "Review and approve the story (changes status from Draft to Approved)."
-    # This step also runs once per story; it is implicitly part of the loop because
-    # it depends on a loop‑generated document. The orchestrator will treat it as
-    # a separate instance for each story (like 9‑1, 9‑2, ...).
+    next: [10]
 
   - id: 10
+    prev: null
     name: Story Implementation
     agent: dev
     requires:
@@ -134,28 +168,32 @@ steps:
       - implementation-rules.md
     creates:
       - "implementation-{{storyIndex}}/"     # directory for this story's files
-    # Actual file creation is handled by the agent; we track the directory as created
     template: implementation-tmpl
     notes: "Implement the story."
+    next: [11]
 
   - id: 11
+    prev: null
     name: QA Review of Implementation
     agent: qa
     requires:
       - "implementation-{{storyIndex}}/"
-    # QA may update implementation files
-    updates:
+    creates:
       - "implementation-{{storyIndex}}/"
     template: implementation-tmpl
     notes: "Review implementation, may leave unchecked items."
     after: |
       # After QA, set qaLeftUnchecked based on review outcome
       state.dynamicContext.qaLeftUnchecked = review_had_unchecked_items()
+    next:
+      condition: 
+        - variable.qaLeftUnchecked
+      conditionNext: 12            # if true, go to fixing step
+      default: 13                  # if false, story is ready to mark complete
 
   - id: 12
     name: Addressing QA Feedback
     agent: dev
-    # This step runs only if qaLeftUnchecked is true
     condition:
       variable: qaLeftUnchecked
       equals: true
@@ -166,12 +204,12 @@ steps:
     template: implementation-tmpl
     notes: "Fix issues left by QA."
     after: |
-      # After fixing, we may need to loop back to QA (step 11) for final review.
-      # This is handled by the next field.
+      # After fixing, re-evaluate if any unchecked items remain
+      state.dynamicContext.qaLeftUnchecked = review_had_unchecked_items()
     next:
-      default: 13                        # go to final step if condition false
-      condition: "qaLeftUnchecked"        # if still unchecked, repeat QA
-      conditionNext: 11
+      condition: "qaLeftUnchecked"
+      conditionNext: [11]            # if still issues, loop back to QA
+      default: [13]                  # if resolved, mark story complete
 
   - id: 13
     name: Mark Story Complete
@@ -185,36 +223,37 @@ steps:
     after: |
       # Increment story index for the next iteration
       state.dynamicContext.currentStoryIndex += 1
-    # After this step, the orchestrator checks if there are more stories.
-    # If yes, it will restart the loop at step 8 with the next index.
-    # If no, it proceeds to step 16.
+    # The orchestrator will automatically restart the loop at step 8
+    # if there are more stories. If not, it proceeds to step 16.
 
-  # ------------------------------------------------------------------------
+  # ------------------------------------------------------------
   # End of story loop
-  # ------------------------------------------------------------------------
+  # ------------------------------------------------------------
 
   - id: 16
     name: All Stories Complete
     agent: system
     requires:
-      - condition: "currentStoryIndex >= stories.length"
-    # This step is a dummy; it just marks that the loop is finished.
+      condition: "currentStoryIndex >= stories.length"
     notes: "All stories have been processed."
+    next:
+      condition: "user_requested_retrospective"
+      conditionNext: 17
+      default: 18
 
   - id: 17
     name: Epic Retrospective (Optional)
     agent: po
     condition:
-      variable: user_requested_retrospective    # could be set via user input
+      variable: user_requested_retrospective
       equals: true
     creates:
       - epic-retrospective.md
     template: retrospective-tmpl
     notes: "Optional retrospective after epic completion."
+    next: [18]
 
   - id: 18
     name: Project Complete
     agent: system
-    requires:
-      - id: 16                                # all stories done
     notes: "All development phases finished."

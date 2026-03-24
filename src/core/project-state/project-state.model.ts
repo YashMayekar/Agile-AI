@@ -5,6 +5,10 @@ export interface FileNode {
   file: string;
 }
 
+export interface History {
+  History: ProjectHistoryEntry[];
+}
+
 /**
  * Represents a directory node in the project tree.
  */
@@ -42,19 +46,27 @@ export interface ProjectHistoryEntry {
   summary: string;
 }
 
+export interface ChatHistoryEntry {
+  user: string;
+  ag_res: string;
+  ag_type: string;
+  timestamp: number; // actual timestamp (e.g., Date.now())
+}
+
+
 export interface ProjectState {
   projectId: string;
-  mode: "greenfield" | "brownfield";
-  phase: "planning" | "implementation";
+  mode: "greenfield" | "brownfield" | null;
+  phase: "planning" | "implementation" ;
   currentStepId: number | string | null;   // current step (or instance) to execute
-  workflowFile: string;
+  workflowFile: string ;
 
   documents: Record<string, ProjectDocument>;
-
+  dialogueHistory?: Array<{ role: "user" | "assistant"; content: string }>;
+  
   // One‑time completed steps (steps that will never be repeated)
   completedSteps: (number | string)[];
 
-  history: ProjectHistoryEntry[];
 
   // Persistent memory for the project (used by agents)
   contextMemory: {

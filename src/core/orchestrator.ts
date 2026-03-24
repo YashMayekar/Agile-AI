@@ -1,7 +1,10 @@
 import { OllamaAdapter } from "../llm/ollama.adapter";
 import { logger } from "../utils/logger";
+import { ContextBuilder } from "./context-builder";
 import { ExecutionLock } from "./execution-lock";
 import { MemoryManager } from "./memory-manager";
+import { StateManager } from "./state-manager";
+import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
 
 const MODULE = "orchestrator.ts";
 
@@ -19,33 +22,57 @@ export class Orchestrator {
     llm?: OllamaAdapter
   ): AsyncGenerator<{ res: string | null; done: boolean }, any, unknown> {
     ExecutionLock.acquire(projectId);
-    let fullResponse = "";
+      let fullResponse: string = "";
+      let context: string = "";
+      let steps: string = "";
+      let currentWorkflow: WorkflowStep | null = null;
+      let agent: string = "";    
+      let currentStepID = 1;
+
+    try {
+      WorkflowEngine.loadWorkflow("greenfield.yaml")
+      currentWorkflow = WorkflowEngine.getStepById(currentStepID)
+       
+      logger.warn(`${MODULE}\n${JSON.stringify(steps)}`)
+    } catch (e) {
+      logger.error(`${MODULE} Error in loading worlflow step: ${e}`)
+    }
+
+    try {
+      if (!currentWorkflow) {
+        throw new Error("Workflow step not found");
+      }
+      agent = currentWorkflow.agent;
+    } catch (e) {
+      logger.error(`${MODULE} Error in ${agent} prompt: ${e}`)
+    }
 
     try {
       logger.info(`[${MODULE}] Processing input for project: ${projectId}`);
 
       // Load conversation history
-      const history = MemoryManager.loadHistory(projectId);
-      logger.debug(`[${MODULE}] Loaded ${history.length} messages from history`);
-
+      
       // Build system prompt with conversation history
-      let systemPrompt = "You are a helpful assistant that remembers the conversation.\n\n";
-      if (history.length > 0) {
-        systemPrompt += "Here is the conversation so far:\n";
-        systemPrompt += history
-          .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
-          .join("\n");
-        systemPrompt += "\n\n";
-      }
-      systemPrompt += "Now respond to the user's latest message.";
+      let chatHistory = "You are a helpful assistant that remembers the conversation.\n\nHere is the last 2 conversation :\n"
+      + MemoryManager.getLastNConversations(projectId, 2) + "\n\n" 
+      
 
       // Use provided LLM or create a new one
       const llmInstance = llm ?? new OllamaAdapter();
 
+
+      try{
+        
+        context = ContextBuilder.buildFullContext(projectId, currentStepID, agent)
+
+      } catch (e) {
+        logger.error(`${MODULE} Faild to build context for project: ${projectId}\nError: ${e}`)
+      }
+
       // Stream the response
       const stream = llmInstance.generate({
-        systemPrompt,
-        userPrompt: userInput,
+        systemPrompt: context,
+        userPrompt: `Understand the context and repond to the User's Input:\n${userInput}\nonly in this format\n${ContextBuilder.response_structure}`,
       });
 
       for await (const chunk of stream) {
@@ -55,9 +82,7 @@ export class Orchestrator {
         }
       }
 
-      // Save both messages to history
-      MemoryManager.addMessage(projectId, "user", userInput);
-      MemoryManager.addMessage(projectId, "assistant", fullResponse.trim());
+      MemoryManager.addConversation(projectId, userInput, fullResponse, agent);
 
       logger.info(`[${MODULE}] Completed processing for project ${projectId}`);
     } catch (error: any) {

@@ -17,7 +17,7 @@ export class AnalystAgent extends BaseAgent {
   getSystemPrompt(): string {
     if (AnalystAgent.systemPrompt === null) {
       try {
-        const filePath = path.join(__dirname, "prompts", "analyst.txt");
+        const filePath = path.join(__dirname, "prompts", "analyst.md");
         AnalystAgent.systemPrompt = fs.readFileSync(filePath, "utf-8");
         logger.debug(`[AnalystAgent] Loaded system prompt from ${filePath}`);
       } catch (error: any) {

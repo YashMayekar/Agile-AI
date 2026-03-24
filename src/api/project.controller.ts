@@ -1,7 +1,7 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 import { FileSystem } from "../utils/file-system";
-import { ProjectState } from "../core/project-state/project-state.model";
+import { ChatHistoryEntry, ProjectState } from "../core/project-state/project-state.model";
 import path from "path";
 import { logger } from "../utils/logger";
 import { Orchestrator } from "../core/orchestrator";
@@ -48,9 +48,10 @@ router.post("/init", async (req, res) => {
       fileTree: tree
     }
   };
-
+  const initialHistory: ChatHistoryEntry[] = [];
+  
   FileSystem.writeJSON(path.join(projectPath, "state.json"), initialState);
-  FileSystem.writeFile(path.join(projectPath, "history.txt"), "");
+  FileSystem.writeJSON(path.join(projectPath, "history.json"), initialHistory);
 
   // Create and store the LLM instance for this project
   const llm = new OllamaAdapter();
@@ -74,8 +75,11 @@ router.post("/:projectId/m/s", async (req, res) => {
   // Retrieve the cached LLM instance for this project
   const llm = llmInstances.get(projectId);
   if (!llm) {
-    res.status(404).json({ error: "Project not initialized or LLM instance missing" });
-    return;
+    const llm = new OllamaAdapter();
+    llmInstances.set(projectId, llm); 
+    // res.status(404).json({ error: "Project not initialized or LLM instance missing" });
+    // return;
+    
   }
 
   try {

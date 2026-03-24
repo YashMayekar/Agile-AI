@@ -3,6 +3,9 @@ import { ProjectStateRepository } from "./project-state/project-state.repository
 import { SchemaValidator } from "./schema-validator";
 import { logEvent, logger } from "../utils/logger";
 import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
+import path from "path/win32";
+import { promises as fs } from "fs";
+
 
 const MODULE = "state-manager.ts";
 
@@ -33,21 +36,49 @@ export class StateManager {
     return state;
   }
 
-  static addHistory(
-    state: ProjectState,
-    stepId: number | string,
-    agent: string,
-    summary: string
-  ) {
-    logger.debug(`[${MODULE}] Adding history entry for step ${stepId}, agent ${agent}`);
-    state.history.push({
+  static async addHistory(
+  projectid: string,
+  state: ProjectState,
+  stepId: number | string,
+  agent: string,
+  summary: string
+) {
+  const filePath = path.join(projectid, "history.txt");
+
+  try {
+    // Read existing file
+    let data;
+    try {
+      const fileContent = await fs.readFile(filePath, "utf8");
+      data = JSON.parse(fileContent);
+    } catch (err) {
+      // If file doesn't exist or is empty
+      data = { History: [] };
+    }
+
+    // Ensure structure exists
+    if (!data.History) {
+      data.History = [];
+    }
+
+    // Append new history
+    data.History.push({
       stepId,
       agent,
       timestamp: new Date().toISOString(),
       summary
     });
-    return state;
+
+    // Write back to file
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
+
+  } catch (error) {
+    console.error("Error updating history:", error);
+    throw error;
   }
+
+  return state;
+}
 
   static applyAfterStep(
     state: ProjectState,
