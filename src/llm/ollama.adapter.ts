@@ -1,5 +1,6 @@
 import { LLMAdapter } from "./llm-adapter.interface";
 import { logger } from "../utils/logger";
+import { ContextBuilder } from "../core/context-builder";
 
 // qwen3.5:9b
 // mistral:latest
@@ -22,7 +23,7 @@ export class OllamaAdapter implements LLMAdapter {
       body: JSON.stringify({
         model: this.model,
         system: params.systemPrompt,
-        prompt: params.userPrompt,
+        prompt: `Understand the context and repond to the User's Input:\n${params.userPrompt}\nonly in this format\n${ContextBuilder.response_structure}`,
         stream: true,
         "think": "low",
       }),
