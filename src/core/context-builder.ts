@@ -8,7 +8,8 @@
  * - Keeping prompts clean and minimal
  */
 
-import { ProjectState } from "./project-state/project-state.model";
+import { ProjectState, FileTreeNode } from "./project-state/project-state.model";
+import { ProjectStateRepository } from "./project-state/project-state.repository";
 import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
 import { logger } from "../utils/logger";
 import { MemoryManager } from "./memory-manager";
@@ -135,15 +136,57 @@ All responses MUST follow this JSON format:
   return context;
   }
 
+  static async getClientFS(projectId: string): Promise<string> {
+    let fsTree = ProjectStateRepository.load(projectId).dynamicContext.fileTree;
+   
+    if(!fsTree){
+        const res = await fetch("http://localhost:4500/data/tree");
+        if (!res.ok){
+            throw new Error("Failed to fetch file tree");   
+        }
+        fsTree = await res.json()
+    }
+
+    const result: string[] = [];
+
+    function traverse(node: FileTreeNode | undefined, currentPath: string) {
+        if (!node) { return }
+        if ("directory" in node) {
+        const dirPath = currentPath
+          ? `${currentPath}/${node.directory}`
+          : node.directory;
+
+        result.push(dirPath);
+
+        for (const child of node.children) {
+          traverse(child, dirPath);
+        }
+      } else if ("file" in node) {
+        const filePath = `${currentPath}/${node.file}`;
+        result.push(filePath);
+      }
+    }
+
+    
+    traverse(fsTree, "");
+
+    return result.join("\n");
+  }
+
+
   static buildSteps(currentStepID: number){
-    let steps = `This is your current step to perform\n${JSON.stringify(WorkflowEngine.getStepById(currentStepID))}`
-    steps += `These are you next steps you can perform,
-          ${JSON.stringify(WorkflowEngine.getNextSteps(currentStepID))}
-          First perform the current step, 
-          and if the current step is completed then only show the names of the next steps
-          1. name of step
-          2. name of step
-          ...`
+    const currStep = WorkflowEngine.getStepById(currentStepID)
+    let steps = `
+    This is your current step to perform\n${currStep.name}
+    \nHere u need to create: ${currStep.creates}
+    \nFor that you require: ${currStep.requires}
+    \nAddition notes to be consider about this step:\n${currStep.notes}
+    These are you next steps you can perform, ONLY AFTER COMPLETING CURRENT STEP`
+    
+    const next_steps = WorkflowEngine.getNextSteps(currentStepID)
+    for (const step of next_steps) {
+        steps += `Step Id: ${step.id}, Step Name: ${step.name}`
+    }
     return steps
   }
 
@@ -159,7 +202,7 @@ All responses MUST follow this JSON format:
       You are a part of a Agentic Agile Software development workflow that helps the user to develop their software projects and you are now operating as a specialized AI agent, throughly read the below instructions and act accordingly, do not break the character.
       ${this.getAgentPrompt(agent)}
 
-      Here is the whole context, by considering this you should reepond
+      Here is the whole context, by considering this you should respond
       ${this.buildSteps}
 
       This is the last few conversation that you should remember,

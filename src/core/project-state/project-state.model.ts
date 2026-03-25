@@ -59,6 +59,7 @@ export interface ProjectState {
   mode: "greenfield" | "brownfield" | null;
   phase: "planning" | "implementation" ;
   currentStepId: number | string | null;   // current step (or instance) to execute
+  currentAgent: string;
   workflowFile: string ;
 
   documents: Record<string, ProjectDocument>;

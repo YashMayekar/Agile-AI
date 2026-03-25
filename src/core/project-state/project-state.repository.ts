@@ -18,6 +18,10 @@ export class ProjectStateRepository {
     return path.join(this.getProjectPath(projectId), "state.json");
   }
 
+  private static getHistoryPath(projectId: string): string {
+      return path.join("projects", projectId, "history.json");
+  } 
+
   static load(projectId: string): ProjectState {
     return FileSystem.readJSON(this.getStatePath(projectId));
   }
