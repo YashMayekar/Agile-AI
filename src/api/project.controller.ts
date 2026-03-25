@@ -33,6 +33,7 @@ router.post("/init", async (req, res) => {
     mode: null,
     phase: "planning",
     currentStepId: 0,
+    currentAgent: "orchestrator",
     workflowFile: "",
     documents: {},
     completedSteps: [],
