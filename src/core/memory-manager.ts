@@ -51,6 +51,7 @@ export class MemoryManager {
 
     history.push(entry);
     this.saveHistory(projectId, history);
+    logger.info(`[${MODULE}] Conversation stored successfully`)
   }
 
   // 🔥 Return formatted history (user: ... \n assistant: ...)
@@ -67,9 +68,9 @@ export class MemoryManager {
     // 🧠 Get last N conversations formatted
   static getLastNConversations(projectId: string, n: number): string {
     const history = this.loadHistory(projectId);
-    logger.warn(JSON.stringify(history))
-    if (history.length<n){ 
-      return history.slice(-n)
+    logger.info(`[${MODULE}] Fetching last ${n} conversation history`)
+    if (history.length<=n){ 
+      return history
       .map((entry) => `user: ${entry.user}\nassistant: ${entry.ag_res}`)
       .join("\n");
     }

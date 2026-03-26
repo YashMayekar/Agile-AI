@@ -30,7 +30,7 @@ export const logger = winston.createLogger({
   transports: [
     // File transport - JSON format for structured logging
     new winston.transports.File({ 
-      filename: "logs/system.log",
+      filename: "/system.log",
       level: "info",
       format: winston.format.combine(
         winston.format.timestamp(),

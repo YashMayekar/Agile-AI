@@ -21,4 +21,5 @@ export interface LLMResponse {
 
 export interface LLMAdapter {
   generate(params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }>;
+  // genComplete(projectId: string, params: { systemPrompt: string; userPrompt: string });
 }

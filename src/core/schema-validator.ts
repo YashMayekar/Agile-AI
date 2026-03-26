@@ -2,7 +2,7 @@ import Ajv, { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import fs from "fs";
 import path from "path";
-import { logEvent } from "../utils/logger";
+import { logger } from "../utils/logger";
 
 export class SchemaValidator {
   private static ajv = new Ajv({ allErrors: true }); // strict mode is on by default
@@ -32,7 +32,7 @@ export class SchemaValidator {
     const valid = validate(data);
 
     if (!valid) {
-      logEvent("SCHEMA_VALIDATION_FAILED", {
+      logger.error("SCHEMA_VALIDATION_FAILED", {
         schemaFile,
         errors: validate.errors
       });

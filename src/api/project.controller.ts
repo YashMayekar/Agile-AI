@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { FileSystem } from "../utils/file-system";
 import { ChatHistoryEntry, ProjectState } from "../core/project-state/project-state.model";
 import path from "path";
-import { logger } from "../utils/logger";
+import { logger} from "../utils/logger";
 import { Orchestrator } from "../core/orchestrator";
 import { OllamaAdapter } from "../llm/ollama.adapter";
 
@@ -11,18 +11,27 @@ const MODULE = "project.controller.ts";
 const router = express.Router();
 
 // Cache to hold LLM instances per project
-const llmInstances = new Map<string, OllamaAdapter>();
+export const llmInstances = new Map<string, OllamaAdapter>();
+export let systemStatus = ""
+
+
+router.get("/:projectId/status",(req, res) => {
+  const { projectId } = req.params;
+  
+  res.json({ status: systemStatus})
+})
 
 /**
  * POST /api/project/init
  * Creates a new project and returns the project ID.
- */
+*/
 router.post("/init", async (req, res) => {
   const { tree } = req.body;
-  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED - Initializing new project`);
-
+  
   const projectId = uuidv4();
   const projectPath = path.join("projects", projectId);
+  
+  logger.info(`[${MODULE}] PROJECT_INITIALIZATION_STARTED - Initializing new project`);
 
   FileSystem.ensureDir(projectPath);
   FileSystem.ensureDir(path.join(projectPath, "docs"));
@@ -34,6 +43,7 @@ router.post("/init", async (req, res) => {
     phase: "planning",
     currentStepId: 0,
     currentAgent: "orchestrator",
+    systemStatus: "INITIALIZING PROJECT",
     workflowFile: "",
     documents: {},
     completedSteps: [],
@@ -58,6 +68,8 @@ router.post("/init", async (req, res) => {
   const llm = new OllamaAdapter();
   llmInstances.set(projectId, llm);
 
+  logger.info(`[${MODULE}] PROJECT_INITIALIZATED - ID: ${projectId}`);
+
   res.json({ projectId });
 });
 
@@ -71,16 +83,14 @@ router.post("/:projectId/m/s", async (req, res) => {
   const { projectId } = req.params;
   const { userInput } = req.body;
 
-  logger.warn(`[${MODULE}] Received streaming message for project ${projectId}: ${userInput}`);
+
+  logger.debug(`[${MODULE}] Input received from user: ${userInput}`);
 
   // Retrieve the cached LLM instance for this project
   const llm = llmInstances.get(projectId);
   if (!llm) {
     const llm = new OllamaAdapter();
     llmInstances.set(projectId, llm); 
-    // res.status(404).json({ error: "Project not initialized or LLM instance missing" });
-    // return;
-    
   }
 
   try {

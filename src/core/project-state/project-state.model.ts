@@ -57,9 +57,12 @@ export interface ChatHistoryEntry {
 export interface ProjectState {
   projectId: string;
   mode: "greenfield" | "brownfield" | null;
-  phase: "planning" | "implementation" ;
+  phase: "planning" | "designing" | "development" ;
   currentStepId: number | string | null;   // current step (or instance) to execute
   currentAgent: string;
+
+  systemStatus: string;
+
   workflowFile: string ;
 
   documents: Record<string, ProjectDocument>;
