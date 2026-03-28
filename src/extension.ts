@@ -38,7 +38,7 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.trim() === '') continue;
+        if (line.trim() === '') { continue; };
         try {
           const chunk = JSON.parse(line);
           if (chunk.res !== null && chunk.res !== undefined) {
@@ -267,7 +267,7 @@ export function activate(context: vscode.ExtensionContext) {
         { modal: true },
         "Yes"
       );
-      if (confirm !== "Yes") return;
+      if (confirm !== "Yes") { return; };
 
       let savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
       savedChats = savedChats.filter(c => c.id !== projectId);
@@ -432,7 +432,7 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
   // Start status polling
   const statusInterval = setInterval(async () => {
     const realProjectId = panelToProjectId.get(panel);
-    if (!realProjectId) return;
+    if (!realProjectId) { return; };
     try {
       const resp = await fetch(`http://localhost:4000/api/project/${realProjectId}/status`);
       if (resp.ok) {
