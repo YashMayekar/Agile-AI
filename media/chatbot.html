@@ -381,6 +381,15 @@
       // Reset streaming state for new assistant message
       currentAssistantMessageDiv = null;
       currentAssistantMessageContent = '';
+      if (currentSystemMessageDiv) {
+        currentSystemMessageDiv.remove();
+        currentSystemMessageDiv = null;
+      }
+      if (statusIntervalId) {
+        clearInterval(statusIntervalId);
+        statusIntervalId = null;
+      }
+      lastStatusStr = '';
 
       // Send message to extension
       vscode.postMessage({
@@ -466,6 +475,22 @@
         lastStatusStr = '';
         currentSystemMessageDiv = null;
       } else if (msg.type === 'statusUpdate') {
+        if (msg.data === 'IDLE' || msg.data.status === 'IDLE' || (msg.data.message && msg.data.message === 'IDLE')) {
+          if (currentSystemMessageDiv) {
+            currentSystemMessageDiv.remove();
+            currentSystemMessageDiv = null;
+          }
+          if (statusIntervalId) {
+            clearInterval(statusIntervalId);
+            statusIntervalId = null;
+          }
+          lastStatusStr = 'IDLE';
+          return;
+        }
+
+        // If the LLM is actively streaming a response, ignore any backend status updates
+        if (currentAssistantMessageDiv) return;
+
         if (msg.data && msg.data.message) {
           const str = msg.data.object ? msg.data.object + '|' + msg.data.message : msg.data.message;
           if (str !== lastStatusStr) {
@@ -505,8 +530,8 @@
               let dots = '.'.repeat(statusDotCount);
 
               let displayStr = statusBaseText;
-              if (statusIsThinking && statusSeconds >= 5) {
-                const moreCount = Math.floor(statusSeconds / 5);
+              if (statusIsThinking && statusSeconds >= 6) {
+                const moreCount = Math.floor(statusSeconds / 6);
                 if (moreCount === 1) {
                   displayStr = 'ℹ️ Thinking harder';
                 } else if (moreCount > 1) {

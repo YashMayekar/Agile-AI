@@ -144,11 +144,11 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
         // Update panel title and map
-        panel.title = `Chat ${projectId.slice(0, 2)}`;
+        panel.title = `Chat ${projectId.slice(0, 4)}`;
         panelToProjectId.set(panel, projectId);
 
         // Save chat session
-        const savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+        const savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
         savedChats.push({ id: projectId, title: panel.title });
         context.workspaceState.update('savedChats', savedChats);
         sidebarProvider.refresh();
@@ -189,10 +189,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('chat.openChat', async (projectId: string) => {
       try {
-        const savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+        const savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
         const chatInfo = savedChats.find(c => c.id === projectId);
-        const title = chatInfo ? chatInfo.title : `Chat ${projectId.slice(0, 6)}`;
-        
+        const title = chatInfo ? chatInfo.title : `Chat ${projectId.slice(0, 4)}`;
+
         const panel = createChatPanel(context.extensionUri, projectId);
         panel.title = title;
         panelToProjectId.set(panel, projectId);
@@ -212,7 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
             context.workspaceState.update(`chat_history_${projectId}`, history);
           }
         }
-        
+
         if (history) {
           // Clear loading message
           panel.webview.postMessage({ type: 'clearMessages' });
@@ -248,7 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
             message: '❌ Failed to load chat history.'
           });
         }
-        
+
         panel.onDidDispose(() => {
           panelToProjectId.delete(panel);
         });
@@ -269,12 +269,12 @@ export function activate(context: vscode.ExtensionContext) {
       );
       if (confirm !== "Yes") return;
 
-      let savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+      let savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
       savedChats = savedChats.filter(c => c.id !== projectId);
       context.workspaceState.update('savedChats', savedChats);
       context.workspaceState.update(`chat_history_${projectId}`, undefined);
       sidebarProvider.refresh();
-      
+
       // Optionally notify the user
       vscode.window.showInformationMessage("Chat deleted from sidebar");
     })
@@ -340,7 +340,7 @@ async function buildTree(dirPath: string, relativePath: string = ""): Promise<an
 
     if (entry.isDirectory()) {
       if (entry.name === 'venv' || entry.name === 'node_modules' ||
-        entry.name === '.git' || entry.name === '.vscode' || entry.name ==='__pycache__'
+        entry.name === '.git' || entry.name === '.vscode' || entry.name === '__pycache__'
       ) {
         continue;
       }
