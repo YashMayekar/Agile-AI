@@ -59,26 +59,23 @@
 
     // New Chat button
     document.getElementById("newChatBtn").addEventListener("click", () => { 
-      vscode.postMessage({ command: "newChat" }); 
+      vscode.postMessage({ command: "newChat" });
     });
-
     // Refresh button
     document.getElementById("refreshBtn").addEventListener("click", () => {
-      vscode.postMessage({ command: "refreshChats" });
+      vscode.postMessage({ command: "ready" });
     });
 
     // Handle messages from extension
     window.addEventListener('message', event => {
       const message = event.data;
-      switch (message.command) {
-        case 'updateChatList':
-          updateChatList(message.conversations);
-          break;
+      if (message.type === 'updateChats') {
+        updateChatList(message.chats);
       }
     });
 
-    function updateChatList(conversations) {
-      if (!conversations || conversations.length === 0) {
+    function updateChatList(chats) {
+      if (!chats || chats.length === 0) {
         chatListContainer.innerHTML = `
           <div style="padding: 10px; text-align: center; color: #888;">
             No chats yet. Start a new chat!
@@ -87,18 +84,13 @@
         return;
       }
 
-      chatListContainer.innerHTML = conversations.map(conv => `
-        <div class="chat-item" data-id="${conv.id}">
-          <div style="font-weight: bold;">Chat ${conv.id.slice(0, 8)}...</div>
-          <div style="font-size: 0.8em; color: #ccc;">
-            ${conv.messages && conv.messages.length > 0 
-              ? conv.messages[conv.messages.length - 1].message.slice(0, 50) + '...'
-              : 'Empty chat'
-            }
+      chatListContainer.innerHTML = chats.map(conv => `
+        <div class="chat-item-wrapper" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div class="chat-item" data-id="${conv.id}" title="${conv.title}" style="flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
+            <div style="font-weight: bold; overflow: hidden; text-overflow: ellipsis;">${conv.title}</div>
+            <div style="font-size: 0.8em; color: #ccc;">Click to open</div>
           </div>
-          <div style="font-size: 0.7em; color: #888; margin-top: 4px;">
-            Messages: ${conv.messages ? conv.messages.length : 0}
-          </div>
+          <button class="delete-btn" data-id="${conv.id}" title="Delete Chat" style="width: auto; padding: 4px; margin: 0; background: transparent; border: none; font-size: 1.2em; cursor: pointer;">🗑️</button>
         </div>
       `).join('');
 
@@ -107,15 +99,27 @@
         item.addEventListener('click', () => {
           const conversationId = item.getAttribute('data-id');
           vscode.postMessage({ 
-            command: "loadChat", 
-            conversationId: conversationId 
+            command: "openChat", 
+            projectId: conversationId 
+          });
+        });
+      });
+
+      // Add click listeners to delete buttons
+      chatListContainer.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const conversationId = btn.getAttribute('data-id');
+          vscode.postMessage({
+            command: "deleteChat",
+            projectId: conversationId
           });
         });
       });
     }
 
     // Initial load
-    vscode.postMessage({ command: "refreshChats" });
+    vscode.postMessage({ command: "ready" });
   </script>
 </body>
 </html>

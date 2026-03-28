@@ -1,471 +1,475 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { extractCommandBlocks, parseCommandBlock, normalizeRawCommand } from './commandParser';
-import { executeParsedCommand } from './commandExecutor';
-import { pushHistory, handleUndo, getHistory } from './undoManager';
-import { AsyncQueue } from './asyncQueue';
+import * as path from 'path';
+import * as http from 'http';
 
-const execQueue = new AsyncQueue();
+let httpServer: http.Server | null = null;
+let serverPort: number | null = null;
 
-// Store chat panel states
-const chatPanelStates = new Map<string, any>();
+// Map to store projectId per panel
+const panelToProjectId = new Map<vscode.WebviewPanel, string>();
+let globalContext: vscode.ExtensionContext;
 
-class ChatSidebarProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+async function handleMessage(text: string, projectId: string, panel: vscode.WebviewPanel) {
+  try {
+    const response = await fetch(`http://localhost:4000/api/project/${projectId}/m/s`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userInput: text }),
+    });
 
-  public resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
-  ) {
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this._extensionUri]
-    };
-
-    // Load the sidebar.html file
-    const htmlPath = vscode.Uri.joinPath(this._extensionUri, "media", "sidebar.html");
-    
-    try {
-      let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
-      
-      // Replace base URI placeholder if it exists
-      const baseUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "media"));
-      html = html.replace(/{{baseUri}}/g, baseUri.toString());
-      
-      webviewView.webview.html = html;
-    } catch (error) {
-      // Fallback HTML if sidebar.html is not found
-      webviewView.webview.html = this.getFallbackSidebarHtml();
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP error ${response.status}`);
     }
 
-    // Handle messages from sidebar
-    webviewView.webview.onDidReceiveMessage(async (message: any) => {
-      switch (message.command) {
-        case "newChat":
-          vscode.commands.executeCommand('chat.newChat');
-          break;
-        case "renameChat":
-          vscode.commands.executeCommand('chat.renameChat', { id: message.id });
-          break;
-        case "deleteChat":
-          vscode.commands.executeCommand('chat.deleteChat', { id: message.id });
-          break;
-        case "llm_output":
-          await handleLlmOutput(message.text, webviewView.webview);
-          break;
-        case "refreshChats":
-          this.refreshSidebarChats(webviewView.webview);
-          break;
-        case "loadChat":
-          vscode.commands.executeCommand('chat.openExisting', { conversationId: message.conversationId });
-          break;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedMessage = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
       }
-    });
+      buffer += decoder.decode(value, { stream: true });
 
-    // Initial load of chats
-    this.refreshSidebarChats(webviewView.webview);
-  }
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-  private async refreshSidebarChats(webview: vscode.Webview) {
-    try {
-      // Fetch all conversations from backend
-      const response = await fetch('http://localhost:8000/conversations');
-      const conversations = await response.json();
-      
-      webview.postMessage({
-        command: 'updateChatList',
-        conversations: conversations
-      });
-    } catch (error) {
-      console.error('Failed to fetch conversations:', error);
-      webview.postMessage({
-        command: 'updateChatList',
-        conversations: []
-      });
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        try {
+          const chunk = JSON.parse(line);
+          if (chunk.res !== null && chunk.res !== undefined) {
+            accumulatedMessage += chunk.res;
+            panel.webview.postMessage({
+              type: 'botChunk',
+              chunk: chunk.res
+            });
+          }
+          if (chunk.done === true) {
+            panel.webview.postMessage({
+              type: 'botMessage',
+              message: accumulatedMessage,
+              done: true,
+              actions: []
+            });
+          }
+        } catch (err) {
+          console.error('Failed to parse chunk:', line, err);
+        }
+      }
     }
+  } catch (err: any) {
+    panel.webview.postMessage({
+      type: 'error',
+      message: `❌ Error: ${err.message}`
+    });
   }
 
-  private getFallbackSidebarHtml(): string {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    body { color: white; background-color: #1e1e1e; padding: 1rem; font-family: sans-serif; }
-    button { background: #7c5cff; width: 100%; border: none; padding: 0.5rem 1rem; border-radius: 5px; color: white; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <button id="newChatBtn">New Chat</button>
-  <script>
-    const vscode = acquireVsCodeApi();
-    document.getElementById("newChatBtn").addEventListener("click", () => {
-      vscode.postMessage({ command: "newChat" });
-    });
-  </script>
-</body>
-</html>`;
+  // Update local cache after message exchange is completed
+  try {
+    const histResp = await fetch(`http://localhost:4000/api/project/${projectId}/history`);
+    if (histResp.ok) {
+      const history = await histResp.json();
+      globalContext.workspaceState.update(`chat_history_${projectId}`, history);
+    }
+  } catch (err) {
+    // ignore
   }
 }
 
-/** Activation: register a WebviewViewProvider for chatSidebarView */
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Agile AI assistant extension activating...');
+  globalContext = context;
+  const sidebarProvider = new ChatSidebarProvider(context);
 
-  // Register the sidebar webview provider
-  const sidebarProvider = new ChatSidebarProvider(context.extensionUri);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("chatSidebarView", sidebarProvider)
   );
 
-  // Register commands
+  startTreeServer(context);
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('chat.newChat', () => {
-      createChatPanel(context.extensionUri, context);
-    }),
-    vscode.commands.registerCommand('chat.openExisting', async (data) => {
-      createChatPanel(context.extensionUri, context, data.conversationId);
-    }),
-    vscode.commands.registerCommand('chat.renameChat', (node) => {
-      vscode.window.showInformationMessage(`Rename Chat: ${node?.id || 'unknown'}`);
-    }),
-    vscode.commands.registerCommand('chat.deleteChat', (node) => {
-      vscode.window.showInformationMessage(`Delete Chat: ${node?.id || 'unknown'}`);
-    }),
-    vscode.commands.registerCommand('agileAI.showHistory', () => {
-      vscode.window.showInformationMessage(`Recent operations: ${getHistory().length}`);
-    }),
-    vscode.commands.registerCommand('agileAI.undoLast', async () => {
-      const res = await handleUndo();
-      vscode.window.showInformationMessage(`Undo result: ${JSON.stringify(res)}`);
-    }),
-    vscode.commands.registerCommand('agileAI.openChat', async () => {
-      await vscode.commands.executeCommand('workbench.view.extension.chatActivityBar');
+    vscode.commands.registerCommand('chat.newChat', async () => {
+      try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          vscode.window.showErrorMessage("No workspace folder open");
+          return;
+        }
+
+        // Create panel with a temporary title
+        const tempProjectId = "loading...";
+        const panel = createChatPanel(context.extensionUri, tempProjectId);
+
+        // Show loading indicator
+        panel.webview.postMessage({
+          type: 'statusUpdate',
+          data: { message: 'INITIALING CHAT...' }
+        });
+
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        const tree = await buildTree(rootPath);
+
+        const { projectId } = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: "Starting new chat",
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ message: "Sending project structure..." });
+
+            const response = await fetch('http://localhost:4000/api/project/init', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tree }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP error ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.projectId) {
+              throw new Error("No projectId received");
+            }
+
+            progress.report({ message: "Project initialized successfully!" });
+
+            return { projectId: data.projectId };
+          }
+        );
+
+        // Update panel title and map
+        panel.title = `Chat ${projectId.slice(0, 2)}`;
+        panelToProjectId.set(panel, projectId);
+
+        // Save chat session
+        const savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+        savedChats.push({ id: projectId, title: panel.title });
+        context.workspaceState.update('savedChats', savedChats);
+        sidebarProvider.refresh();
+
+        panel.onDidDispose(() => {
+          panelToProjectId.delete(panel);
+        });
+
+        // Send initial greeting message to the LLM
+        try {
+          await handleMessage("greet the user and explain about how you can help him", projectId, panel);
+        } catch (err) {
+          console.error('Failed to send greeting:', err);
+          panel.webview.postMessage({
+            type: 'addMessage',
+            sender: 'bot',
+            message: '❌ Failed to get greeting from LLM.'
+          });
+        }
+
+      } catch (err) {
+        vscode.window.showErrorMessage("Failed to start new chat");
+        console.error(err);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chat.showServerUrl', () => {
+      if (serverPort) {
+        vscode.window.showInformationMessage(`Tree server running at http://localhost:${serverPort}/data/tree`);
+      } else {
+        vscode.window.showWarningMessage("Tree server is not running.");
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chat.openChat', async (projectId: string) => {
+      try {
+        const savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+        const chatInfo = savedChats.find(c => c.id === projectId);
+        const title = chatInfo ? chatInfo.title : `Chat ${projectId.slice(0, 6)}`;
+        
+        const panel = createChatPanel(context.extensionUri, projectId);
+        panel.title = title;
+        panelToProjectId.set(panel, projectId);
+
+        panel.webview.postMessage({
+          type: 'addMessage',
+          sender: 'bot',
+          message: '⏳ Loading chat history...'
+        });
+
+        // Fetch history, prioritize local then fallback to URL
+        let history = context.workspaceState.get<any[]>(`chat_history_${projectId}`);
+        if (!history || history.length === 0) {
+          const resp = await fetch(`http://localhost:4000/api/project/${projectId}/history`);
+          if (resp.ok) {
+            history = await resp.json();
+            context.workspaceState.update(`chat_history_${projectId}`, history);
+          }
+        }
+        
+        if (history) {
+          // Clear loading message
+          panel.webview.postMessage({ type: 'clearMessages' });
+          // Restore messages 
+          for (const entry of history) {
+            if (entry.user && !entry.user.startsWith("greet the user and explain")) {
+              panel.webview.postMessage({
+                type: 'addMessage',
+                sender: 'user',
+                message: entry.user
+              });
+            }
+            try {
+              const agResObj = typeof entry.ag_res === 'string' ? JSON.parse(entry.ag_res) : entry.ag_res;
+              panel.webview.postMessage({
+                type: 'addMessage',
+                sender: 'bot',
+                message: agResObj.res ? agResObj.res : entry.ag_res
+              });
+            } catch (e) {
+              panel.webview.postMessage({
+                type: 'addMessage',
+                sender: 'bot',
+                message: entry.ag_res
+              });
+            }
+          }
+        } else {
+          panel.webview.postMessage({ type: 'clearMessages' });
+          panel.webview.postMessage({
+            type: 'addMessage',
+            sender: 'bot',
+            message: '❌ Failed to load chat history.'
+          });
+        }
+        
+        panel.onDidDispose(() => {
+          panelToProjectId.delete(panel);
+        });
+
+      } catch (err) {
+        vscode.window.showErrorMessage("Failed to open chat");
+        console.error(err);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chat.deleteChat', async (projectId: string) => {
+      const confirm = await vscode.window.showWarningMessage(
+        "Are you sure you want to delete this chat?",
+        { modal: true },
+        "Yes"
+      );
+      if (confirm !== "Yes") return;
+
+      let savedChats = context.workspaceState.get<{id: string, title: string}[]>('savedChats', []);
+      savedChats = savedChats.filter(c => c.id !== projectId);
+      context.workspaceState.update('savedChats', savedChats);
+      context.workspaceState.update(`chat_history_${projectId}`, undefined);
+      sidebarProvider.refresh();
+      
+      // Optionally notify the user
+      vscode.window.showInformationMessage("Chat deleted from sidebar");
     })
   );
 }
 
-/** Deactivate */
-export function deactivate() {
-  // Cleanup if needed
-}
+function startTreeServer(context: vscode.ExtensionContext) {
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-/** Process LLM output: extract blocks, parse, validate, queue execution */
-async function handleLlmOutput(text: string, webview?: vscode.Webview) {
-  const blocks = extractCommandBlocks(text);
-  console.log(`Found ${blocks.length} command blocks:`, blocks);
-  
-  if (!blocks.length) {
-    webview?.postMessage({ source: 'extension', payload: { type: 'no_command', message: 'No command blocks found.' } });
-    return;
-  }
-
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
-  console.log('Workspace root for LLM commands:', workspaceRoot?.fsPath);
-  const activeEditorUri = vscode.window.activeTextEditor?.document.uri;
-
-  // Process all blocks sequentially
-  for (const [index, block] of blocks.entries()) {
-    console.log(`Processing block ${index + 1}/${blocks.length}:`, block);
-    
-    const raw = parseCommandBlock(block);
-    console.log('Parsed raw command:', raw);
-    
-    const { parsed, error } = normalizeRawCommand(raw, block);
-    if (error) {
-      console.error('Parse error:', error);
-      webview?.postMessage({ 
-        source: 'extension', 
-        payload: { 
-          type: 'parse_error', 
-          message: error, 
-          block,
-          blockIndex: index 
-        } 
-      });
-      continue;
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
     }
 
-    console.log('Normalized command:', parsed);
-
-    // Add each block to the execution queue
-    execQueue.add(async () => {
+    if (req.method === 'GET' && req.url === '/data/tree') {
       try {
-        const res = await executeParsedCommand(parsed!, { workspaceRoot, activeEditorUri }, pushHistory);
-        console.log('Execution result:', res);
-        
-        // If it's a read operation with content, send it to frontend as assistant response
-        if (res.ok && res.readContent) {
-          webview?.postMessage({ 
-            source: 'extension', 
-            payload: { 
-              type: 'execute_result', 
-              operation: 'read',
-              result: res, 
-              block,
-              blockIndex: index,
-              // Add this to display read content in chat
-              assistantResponse: `🔧 **Command ${index + 1} Executed Successfully**\n\n**Operation:** ${res.operation}\n**File:** ${res.uri}\n\n${res.readContent}`
-            } 
-          });
-        } else {
-          webview?.postMessage({ 
-            source: 'extension', 
-            payload: { 
-              type: 'execute_result', 
-              result: res, 
-              block,
-              blockIndex: index,
-              assistantResponse: `🔧 **Command ${index + 1} Executed Successfully**\n\n**Operation:** ${res.operation}\n**Result:** ${res.message}`
-            } 
-          });
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No workspace folder open' }));
+          return;
         }
-      } catch (e: any) {
-        console.error('Execution error:', e);
-        webview?.postMessage({ 
-          source: 'extension', 
-          payload: { 
-            type: 'execute_error', 
-            error: String(e), 
-            block,
-            blockIndex: index,
-            assistantResponse: `❌ **Command ${index + 1} Execution Failed**\n\n**Error:** ${String(e)}`
-          } 
-        });
-      }
-    });
-  }
-}
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        const tree = await buildTree(rootPath);
 
-/** Create chat panel function */
-function createChatPanel(extensionUri: vscode.Uri, extensionContext: vscode.ExtensionContext, conversationId?: string) {
-  const panelId = conversationId || `chat-${Date.now()}`;
-  const panel = vscode.window.createWebviewPanel(
-    'chatPanel',
-    conversationId ? `Chat ${conversationId}` : 'New Chat',
-    vscode.ViewColumn.One,
-    {
-      enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
-      retainContextWhenHidden: true // This helps preserve state when panel is hidden
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(tree));
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to build tree' }));
+      }
+    } else {
+      res.writeHead(404);
+      res.end();
     }
-  );
-  const resolvedConversationId = conversationId || `chat-${Date.now()}`;
-  vscode.window.showInformationMessage(`Chat panel opened with ID: ${resolvedConversationId}`);
-
-  // Store panel reference
-  chatPanelStates.set(resolvedConversationId, { panel, conversationId: resolvedConversationId });
-
-
-  // Get the path to the chatbot HTML file
-  const chatbotHtmlPath = vscode.Uri.joinPath(extensionUri, "media", "chatbot.html");
-  
-  try {
-    let html = fs.readFileSync(chatbotHtmlPath.fsPath, 'utf8');
-    
-    // Replace base URI placeholder if it exists
-    const baseUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media"));
-    html = html.replace(/{{baseUri}}/g, baseUri.toString());
-    
-    // Add conversation ID to HTML
-    html = html.replace(/{{conversationId}}/g, resolvedConversationId);
-    
-    panel.webview.html = html;
-  } catch (error) {
-    panel.webview.html = getFallbackChatHtml(conversationId);
-  }
-
-  // Handle messages from the chat panel
-  panel.webview.onDidReceiveMessage(
-    async message => {
-      switch (message.command) {
-        case 'sendMessage':
-          await handleUserMessage(message.text, panel, conversationId);
-          break;
-        case 'alert':
-          vscode.window.showErrorMessage(message.text);
-          break;
-        case 'llm_output':
-          handleLlmOutput(message.text, panel.webview);
-          console.log('\n\n\noutput from chat panel:\n'+ message.text);
-          vscode.window.showInformationMessage('Executed OP from chat panel');
-          break;
-        case 'chatLoaded':
-          // If we have a conversation ID, load the existing messages
-          if (conversationId) {
-            await loadExistingChat(conversationId, panel);
-          }
-          break;
-      }
-    },
-    undefined,
-    extensionContext.subscriptions
-  );
-
-  // Handle panel disposal
-  panel.onDidDispose(() => {
-    chatPanelStates.delete(panelId);
-  }, null, extensionContext.subscriptions);
-}
-
-/** Load existing chat messages */
-async function loadExistingChat(conversationId: string, panel: vscode.WebviewPanel) {
-  try {
-    const response = await fetch(`http://localhost:8000/conversation/${conversationId}`);
-    const conversation = await response.json();
-    
-    // Send all messages to the webview
-    conversation.messages.forEach((msg: any) => {
-      panel.webview.postMessage({
-        type: 'addMessage',
-        sender: msg.sender,
-        message: msg.message,
-        isHistory: true
-      });
-    });
-  } catch (error) {
-    console.error('Failed to load chat:', error);
-    vscode.window.showErrorMessage('Failed to load chat history');
-  }
-}
-
-/** Handle user messages in chat panel */
-async function handleUserMessage(message: string, panel: vscode.WebviewPanel, conversationId?: string) {
-  // Show user message in the chat
-  panel.webview.postMessage({
-    type: 'addMessage',
-    sender: 'user',
-    message: message
   });
 
-  // Here you would typically send to your LLM service
-  // For now, just echo back
-  setTimeout(() => {
-    panel.webview.postMessage({
-      type: 'addMessage',
-      sender: 'bot',
-      message: `I received: "${message}". This would be processed by the LLM.`
-    });
-  }, 1000);
+  server.listen(4500, () => {
+    const address = server.address();
+    if (address && typeof address !== 'string') {
+      serverPort = address.port;
+      console.log(`Tree server listening on http://localhost:${serverPort}`);
+      vscode.window.showInformationMessage(`Tree server ready at http://localhost:${serverPort}/data/tree`);
+    }
+  });
+
+  httpServer = server;
+  context.subscriptions.push({ dispose: () => server.close() });
 }
 
-/** Fallback chat HTML */
-function getFallbackChatHtml(conversationId?: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chat</title>
-    <style>
-        body {
-            font-family: var(--vscode-font-family);
-            background: var(--vscode-editor-background);
-            color: var(--vscode-editor-foreground);
-            margin: 0;
-            padding: 20px;
-            height: 100vh;
-        }
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 10px;
-            background: var(--vscode-input-background);
-        }
-        .input-area {
-            display: flex;
-            gap: 10px;
-        }
-        input {
-            flex: 1;
-            padding: 8px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 3px;
-        }
-        button {
-            padding: 8px 16px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-        }
-        .message {
-            margin: 8px 0;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        .user-message {
-            background: var(--vscode-inputOption-activeBackground);
-            margin-left: 20px;
-        }
-        .bot-message {
-            background: var(--vscode-textBlockQuote-background);
-            margin-right: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="chat-container">
-        <div class="messages" id="messages">
-            <div class="message bot-message">Hello! How can I help you today?</div>
-        </div>
-        <div class="input-area">
-            <input type="text" id="userInput" placeholder="Type your message...">
-            <button id="sendButton">Send</button>
-        </div>
-    </div>
+async function buildTree(dirPath: string, relativePath: string = ""): Promise<any> {
+  const name = path.basename(dirPath);
+  const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  const children = [];
 
-    <script>
-        const vscode = acquireVsCodeApi();
-        const messagesContainer = document.getElementById('messages');
-        const userInput = document.getElementById('userInput');
-        const sendButton = document.getElementById('sendButton');
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    const relPath = path.join(relativePath, entry.name);
 
-        function addMessage(text, isUser = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = isUser ? 'message user-message' : 'message bot-message';
-            messageDiv.textContent = text;
-            messagesContainer.appendChild(messageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
+    if (entry.isDirectory()) {
+      if (entry.name === 'venv' || entry.name === 'node_modules' ||
+        entry.name === '.git' || entry.name === '.vscode' || entry.name ==='__pycache__'
+      ) {
+        continue;
+      }
+      const subTree = await buildTree(fullPath, relPath);
+      children.push(subTree);
+    } else {
+      children.push({
+        file: entry.name,
+      });
+    }
+  }
 
-        function sendMessage() {
-            const text = userInput.value.trim();
-            if (text) {
-                addMessage(text, true);
-                vscode.postMessage({
-                    command: 'sendMessage',
-                    text: text
-                });
-                userInput.value = '';
-            }
-        }
+  return {
+    directory: name,
+    children: children || null,
+  };
+}
 
-        sendButton.addEventListener('click', sendMessage);
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
+class ChatSidebarProvider implements vscode.WebviewViewProvider {
+  private _view?: vscode.WebviewView;
+
+  constructor(private readonly _context: vscode.ExtensionContext) { }
+
+  public refresh() {
+    if (this._view) {
+      const savedChats = this._context.workspaceState.get('savedChats', []);
+      this._view.webview.postMessage({ type: 'updateChats', chats: savedChats });
+    }
+  }
+
+  resolveWebviewView(webviewView: vscode.WebviewView) {
+    this._view = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+
+    const extensionUri = this._context.extensionUri;
+    const htmlPath = vscode.Uri.joinPath(extensionUri, "media", "sidebar.html");
+    try {
+      let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
+      const baseUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media"));
+      html = html.replace(/{{baseUri}}/g, baseUri.toString());
+      webviewView.webview.html = html;
+    } catch {
+      webviewView.webview.html = getSidebarHtml();
+    }
+
+    webviewView.webview.onDidReceiveMessage(msg => {
+      if (msg.command === "newChat") {
+        vscode.commands.executeCommand('chat.newChat');
+      } else if (msg.command === "openChat") {
+        vscode.commands.executeCommand('chat.openChat', msg.projectId);
+      } else if (msg.command === "deleteChat") {
+        vscode.commands.executeCommand('chat.deleteChat', msg.projectId);
+      } else if (msg.command === "ready") {
+        this.refresh();
+      }
+    });
+  }
+}
+
+function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.WebviewPanel {
+  const panel = vscode.window.createWebviewPanel(
+    'chatPanel',
+    `Chat ${projectId.slice(0, 6)}`,
+    vscode.ViewColumn.One,
+    { enableScripts: true }
+  );
+
+  const htmlPath = vscode.Uri.joinPath(extensionUri, "media", "chatbot.html");
+  let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
+  html = html.replace(/{{projectId}}/g, projectId);
+  panel.webview.html = html;
+
+  // Set up message listener
+  panel.webview.onDidReceiveMessage(async msg => {
+    if (msg.command === 'sendMessage') {
+      const realProjectId = panelToProjectId.get(panel);
+      if (!realProjectId) {
+        panel.webview.postMessage({
+          type: 'addMessage',
+          sender: 'bot',
+          message: '❌ Chat not properly initialized. Please start a new chat.'
         });
+        return;
+      }
+      await handleMessage(msg.text, realProjectId, panel);
+    }
+  });
 
-        // Notify extension that chat is loaded
-        vscode.postMessage({ command: 'chatLoaded' });
+  // Start status polling
+  const statusInterval = setInterval(async () => {
+    const realProjectId = panelToProjectId.get(panel);
+    if (!realProjectId) return;
+    try {
+      const resp = await fetch(`http://localhost:4000/api/project/${realProjectId}/status`);
+      if (resp.ok) {
+        const data = await resp.json();
+        panel.webview.postMessage({ type: 'statusUpdate', data: data.status });
+      }
+    } catch {
+      // ignore
+    }
+  }, 1000);
 
-        // Focus input on load
-        userInput.focus();
+  panel.onDidDispose(() => {
+    clearInterval(statusInterval);
+  });
+
+  return panel;
+}
+
+function getSidebarHtml() {
+  return `
+  <!DOCTYPE html>
+  <html>
+  <body style="background:#1e1e1e;color:white;padding:10px">
+    <button id="btn">New Chat</button>
+    <script>
+      const vscode = acquireVsCodeApi();
+      document.getElementById('btn').onclick = () => {
+        vscode.postMessage({ command: 'newChat' });
+      };
     </script>
-</body>
-</html>`;
+  </body>
+  </html>`;
+}
+
+export function deactivate() {
+  if (httpServer) {
+    httpServer.close();
+    console.log('Tree server closed');
+  }
 }

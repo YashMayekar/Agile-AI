@@ -1,576 +1,529 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy"
-  content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http://localhost:8000;">
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Streaming Chat</title>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http://localhost:8000;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Streaming Chat</title>
 
-<style>
-:root{
-  --bg1: linear-gradient(135deg,#0f172a 0%, #001219 100%);
-  --bubble-bg: linear-gradient(135deg, rgba(124,92,255,0.12), rgba(0,200,255,0.05));
-  --accent:#7c5cff;
-  --muted:rgba(255,255,255,0.55);
-}
-html,body{
-  height:100%; margin:0;
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto;
-  background:var(--bg1); color:#e6eef8;
-}
-.container{
-  display:flex; flex-direction:column; height: calc(100vh - 36px);
-  padding:18px; gap:12px;
-}
-.topbar{ display:flex; align-items:center; gap:12px; }
-.logo{
-  width:44px; height:44px; border-radius:10px; background:var(--bubble-bg);
-  display:flex; align-items:center; justify-content:center;
-  color:var(--accent); font-weight:700; box-shadow:0 6px 18px rgba(0,0,0,0.6);
-}
-.heading{ font-size:16px; font-weight:600; }
-.meta{ font-size:12px; color:var(--muted); }
-
-.chat-panel{
-  flex:1; overflow:auto;
-  border-radius:12px; padding:18px;
-  background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));
-}
-.message{
-  max-width:88%; margin-bottom:14px; padding:12px 14px; border-radius:10px;
-  background:rgba(255,255,255,0.02);
-  box-shadow:0 6px 20px rgba(2,6,23,0.6);
-  position: relative;
-}
-.message.user{ margin-left:auto; background:linear-gradient(90deg,rgba(124,92,255,0.12),rgba(0,200,255,0.06)); }
-.message.assistant{ margin-right:auto; border-left:3px solid rgba(124,92,255,0.18); }
-
-.rendered{ white-space:pre-wrap; word-break:break-word; font-size:13.8px; }
-
-h1{ color:var(--accent); margin:6px 0 8px 0; font-size:18px; }
-pre.codeblock{
-  margin:8px 0; padding:12px; border-radius:8px; overflow:auto;
-  background:rgba(0,0,0,0.45); border:1px solid rgba(255,255,255,0.03);
-}
-pre.codeblock code{
-  font-family:'Courier New',monospace; font-size:13px; color:#dbeafe;
-}
-
-.loader{
-  display:flex; align-items:center; justify-content:center;
-  gap:6px;
-}
-.dot{
-  width:8px; height:8px; border-radius:50%; background:var(--accent); opacity:0.15;
-  animation:blink 1s infinite;
-}
-.dot:nth-child(2){ animation-delay:0.15s; }
-.dot:nth-child(3){ animation-delay:0.3s; }
-@keyframes blink{
-  0%{opacity:0.15; transform:translateY(0)}
-  50%{opacity:1; transform:translateY(-6px)}
-  100%{opacity:0.15; transform:translateY(0)}
-}
-
-.composer{ display:flex; gap:10px; align-items:center; padding-top:10px; }
-.input{
-  flex:1; min-height:44px; border-radius:9px; padding:10px 12px;
-  background:rgba(255,255,255,0.02); color:#e6eef8; border:1px solid rgba(255,255,255,0.03);
-  resize:none; font-size:13.5px;
-}
-
-.button-container {
-  display: flex;
-  flex-direction: column;
-  width: 150px; /* button takes full width */
-  max-width: 300px; /* optional: control overall width */
-}
-.thinking-row {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-  gap: 8px;
-}
-
-#Thinking {
-  background: var(--bg1);
-  color: #e6eef8;
-  border: 1px solid #ccc;
-  padding: 5px;
-}
-
-/* Ensure dropdown options have consistent style */
-#Thinking option {
-  background: var(--bg1);
-  color: black;
-}
-
-
-button.send{
-  border:none; background:linear-gradient(90deg,#7c5cff,#00c8ff); color:white;
-  width: 100%; padding:10px; border-radius:9px; cursor:pointer; font-weight:600;
-  box-shadow:0 8px 18px rgba(0,0,0,0.6);
-}
-</style>
-</head>
-<body>
-<div class="container">
-  <div class="topbar">
-    <div class="logo">AI</div>
-    <div>
-      <div class="heading">Agile AI Assistant</div>
-    </div>
-  </div>
-
-  <div id="chat" class="chat-panel"></div>
-
-  <div class="composer">
-    <textarea id="input" class="input" rows="2" placeholder="Type your message..."></textarea>
-    
-    <div class="button-container">
-    <button id="send" class="send">Send</button>
-    <div class="thinking-row">
-      <label for="Thinking">Thinking:</label>
-      <select name="Thinking" id="Thinking">
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
-    </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  const chat = document.getElementById('chat');
-  const input = document.getElementById('input');
-  const sendBtn = document.getElementById('send');
-  const vscode = acquireVsCodeApi();
-  const conversationId = '{{conversationId}}';
-  const thinkingSelect = document.getElementById("Thinking");
-  
-  // State management
-  let chatHistory = [];
-  let hasSentInitialMessage = false; // Track if initial message has been sent
-
-  // Function to save message to history
-  function saveMessageToHistory(role, message) {
-    chatHistory.push({ role, message, timestamp: Date.now() });
-  }
-
-  // Modified addMessage function to save history
-  function addMessage(role, html, messageText = '') {
-    const div = document.createElement('div');
-    div.className = 'message ' + role;
-    const inner = document.createElement('div');
-    inner.className = 'rendered';
-    inner.innerHTML = html;
-    div.appendChild(inner);
-    chat.appendChild(div);
-    chat.scrollTop = chat.scrollHeight;
-    
-    // Save to history
-    if (messageText) {
-      saveMessageToHistory(role, messageText);
+  <style>
+    :root {
+      --bg1: linear-gradient(135deg, #0f172a 0%, #001219 100%);
+      --bubble-bg: linear-gradient(135deg, rgba(124, 92, 255, 0.12), rgba(0, 200, 255, 0.05));
+      --accent: #7c5cff;
+      --muted: rgba(255, 255, 255, 0.55);
     }
-    
-    return div;
-  }
 
-  // Load existing messages when panel is restored
-  window.addEventListener('load', () => {
-    // Notify extension that we're ready to receive history
-    vscode.postMessage({ command: 'chatLoaded' });
-    const imsg = "Hello, introduce yourself in enthusiasism, including your name and some emojis!"
-    // Send initial message automatically when chat loads
-    sendInitialMessage(imsg);
-  });
-
-  // Listen for history messages from extension
-  window.addEventListener('message', event => {
-    const message = event.data;
-    if (message.type === 'addMessage') {
-      addMessage(message.sender, renderAccumulated(message.message), message.message);
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+      background: var(--bg1);
+      color: #e6eef8;
     }
-  });
 
-  // Listen for execution results from extension
-  window.addEventListener('message', event => {
-    const message = event.data;
-    if (message.source === 'extension') {
-      const payload = message.payload;
-      
-      switch (payload.type) {
-        case 'execute_result':
-          // Display the assistant response with execution results
-          if (payload.assistantResponse) {
-            addMessage('assistant', renderAccumulated(payload.assistantResponse));
-            try {
-              if (payload.operation === 'read') {
-                const readResponse = `Response from the Read Operation:\n\n${payload.assistantResponse}`;
-                console.log('\n\nFROM HTML \n\nRead operation response:', readResponse);
-                sendMessage(readResponse)
-              //   const fileContent = typeof payload.result === 'string' ? payload.result : JSON.stringify(payload.result, null, 2);
-              //   addMessage('assistant', renderAccumulated(`📄 **File Content:**\n\n\`\`\`txt\n${fileContent}\n\`\`\``));
-              }
-            } catch (e) {}
-          }
-          break;
-          
-        case 'execute_error':
-          // Display error message
-          if (payload.assistantResponse) {
-            addMessage('assistant', renderAccumulated(payload.assistantResponse));
-          }
-          break;
-          
-        case 'parse_error':
-          addMessage('assistant', renderAccumulated(`❌ **Parse Error**\n\n${payload.message}`));
-          break;
-          
-        case 'no_command':
-          //addMessage('assistant', renderAccumulated('ℹ️ **No commands found**\n\nNo executable command blocks were found in the response.'));
-          break;
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 36px);
+      padding: 18px;
+      gap: 12px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--bubble-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-weight: 700;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+    }
+
+    .heading {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .chat-panel {
+      flex: 1;
+      overflow: auto;
+      border-radius: 12px;
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+    }
+
+    .message {
+      max-width: 88%;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      box-shadow: 0 6px 20px rgba(2, 6, 23, 0.6);
+      position: relative;
+    }
+
+    .message.user {
+      margin-left: auto;
+      background: linear-gradient(90deg, rgba(124, 92, 255, 0.12), rgba(0, 200, 255, 0.06));
+    }
+
+    .message.assistant {
+      margin-right: auto;
+      border-left: 3px solid rgba(124, 92, 255, 0.18);
+    }
+
+    .rendered {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13.8px;
+    }
+
+    .rendered strong {
+      color: var(--accent);
+    }
+
+    .rendered code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .rendered pre.codeblock {
+      margin: 8px 0;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .rendered pre.codeblock code {
+      background: none;
+      padding: 0;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #dbeafe;
+    }
+
+    h1 {
+      color: var(--accent);
+      margin: 6px 0 8px 0;
+      font-size: 18px;
+    }
+
+    /* Loading indicator (three dots) */
+    .loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 0;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.15;
+      animation: blink 1s infinite;
+    }
+
+    .dot:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    .dot:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+
+    @keyframes blink {
+      0% {
+        opacity: 0.15;
+        transform: translateY(0);
+      }
+
+      50% {
+        opacity: 1;
+        transform: translateY(-6px);
+      }
+
+      100% {
+        opacity: 0.15;
+        transform: translateY(0);
       }
     }
-  });
 
-  function escapeHtml(s){
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+    .composer {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding-top: 10px;
+    }
 
-  function renderAccumulated(t) {
-    let text = t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    .input {
+      flex: 1;
+      min-height: 44px;
+      border-radius: 9px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+      color: #e6eef8;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      resize: none;
+      font-size: 13.5px;
+    }
 
-    // Handle code blocks with optional language
-    const codeRegex = /```([a-zA-Z0-9]*)\n([\s\S]*?)```/g;
-    text = text.replace(codeRegex, (m, lang, code) => {
-      const safeCode = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const languageLabel = lang ? `<div style="opacity:0.6;font-size:12px;margin-bottom:4px;">${lang}</div>` : '';
-      return `<pre class="codeblock">${languageLabel}<code>${safeCode}</code></pre>`;
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      width: 150px;
+      max-width: 300px;
+    }
+
+    .thinking-row {
+      display: flex;
+      align-items: center;
+      margin-top: 8px;
+      gap: 8px;
+    }
+
+    #Thinking {
+      background: var(--bg1);
+      color: #e6eef8;
+      border: 1px solid #ccc;
+      padding: 5px;
+    }
+
+    #Thinking option {
+      background: var(--bg1);
+      color: black;
+    }
+
+    button.send {
+      border: none;
+      background: linear-gradient(90deg, #7c5cff, #00c8ff);
+      color: white;
+      width: 100%;
+      padding: 10px;
+      border-radius: 9px;
+      cursor: pointer;
+      font-weight: 600;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.6);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="logo">AI</div>
+      <div>
+        <div class="heading">Agile AI Assistant</div>
+      </div>
+    </div>
+
+    <div id="chat" class="chat-panel"></div>
+
+    <div class="composer">
+      <textarea id="input" class="input" rows="2" placeholder="Type your message..."></textarea>
+
+      <div class="button-container">
+        <button id="send" class="send">Send</button>
+        <div class="thinking-row">
+          <label for="Thinking">Thinking:</label>
+          <select name="Thinking" id="Thinking">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+    const projectId = "{{projectId}}";
+
+    const chat = document.getElementById('chat');
+    let typingIndicator = null;          // for the old loader (kept for compatibility)
+    let currentAssistantMessageDiv = null;
+    let currentAssistantMessageContent = '';
+    let lastStatusStr = '';
+    let currentSystemMessageDiv = null;
+    let statusIntervalId = null;
+    let statusSeconds = 0;
+    let statusDotCount = 0;
+    let statusIsThinking = false;
+    let statusBaseText = '';
+
+    /**
+     * Convert plain text with markdown‑like syntax to safe HTML.
+     * Supports:
+     *   - **bold** → <strong>
+     *   - `inline code` → <code>
+     *   - triple backtick code blocks → <pre class="codeblock"><code>...</code></pre>
+     *   - newlines → <br>
+     */
+    function renderMessageText(text) {
+      if (!text) return '';
+
+      // First, extract code blocks so they aren't processed by other rules
+      const blocks = [];
+      text = text.replace(/```([\s\S]*?)```/g, (match, code) => {
+        blocks.push(code);
+        return `%%CODEBLOCK${blocks.length - 1}%%`;
+      });
+
+      // Escape HTML special characters
+      let escaped = text.replace(/[&<>"]/g, function (m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
+        return m;
+      });
+
+      // Bold: **text** (must be non-greedy)
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+      // Inline code: `text`
+      escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+      // Newlines to <br>
+      escaped = escaped.replace(/\n/g, '<br>');
+
+      // Restore code blocks
+      escaped = escaped.replace(/%%CODEBLOCK(\d+)%%/g, (match, index) => {
+        const code = blocks[index];
+        // Escape code inside block as well (but already safe, just ensure no injection)
+        const safeCode = code.replace(/[&<>]/g, function (m) {
+          if (m === '&') return '&amp;';
+          if (m === '<') return '&lt;';
+          if (m === '>') return '&gt;';
+          return m;
+        });
+        return `<pre class="codeblock"><code>${safeCode}</code></pre>`;
+      });
+
+      return escaped;
+    }
+
+    /**
+     * Add a message bubble to the chat.
+     * sender: 'user' or 'assistant' (bot)
+     * text: raw message string
+     * isTyping: if true, shows a loader instead of text (old style, kept for compatibility)
+     */
+    function addMessage(sender, text, isTyping = false) {
+      // If there's an existing typing indicator from the same sender, remove it
+      if (sender === 'assistant' && typingIndicator) {
+        typingIndicator.remove();
+        typingIndicator = null;
+      }
+
+      const div = document.createElement('div');
+      div.className = `message ${sender === 'user' ? 'user' : 'assistant'}`;
+
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'rendered';
+
+      if (isTyping) {
+        // Show a loader (old style)
+        const loader = document.createElement('div');
+        loader.className = 'loader';
+        for (let i = 0; i < 3; i++) {
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+          loader.appendChild(dot);
+        }
+        contentDiv.appendChild(loader);
+        typingIndicator = div;  // remember this element so we can remove it later
+      } else {
+        // Render actual message
+        contentDiv.innerHTML = renderMessageText(text);
+      }
+
+      div.appendChild(contentDiv);
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Handle send button
+    document.getElementById('send').onclick = () => {
+      const input = document.getElementById('input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      // Add user message immediately
+      addMessage('user', val);
+
+      // Reset streaming state for new assistant message
+      currentAssistantMessageDiv = null;
+      currentAssistantMessageContent = '';
+
+      // Send message to extension
+      vscode.postMessage({
+        command: 'sendMessage',
+        text: val
+      });
+
+      input.value = '';
+    };
+
+    // Allow Enter to send (but Shift+Enter for newline)
+    document.getElementById('input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('send').click();
+      }
     });
 
-    // Split lines to handle headings and lists
-    const lines = text.split('\n');
-    let inList = false;
-    text = lines.map(line => {
-      // H2 ##
-      if (line.startsWith('## ')) return '<h2>' + line.slice(3) + '</h2>';
-      // H3 ###
-      if (line.startsWith('### ')) return '<h3>' + line.slice(4) + '</h3>';
-      // Unordered list
-      if (line.startsWith('- ')) {
-        if (!inList) { inList = true; return '<ul><li>' + line.slice(2) + '</li>'; }
-        return '<li>' + line.slice(2) + '</li>';
-      } else {
-        if (inList) { inList = false; line = '</ul>' + line; }
-      }
-      return line;
-    }).join('<br>');
-
-    // Bold text **
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-    // Inline code `code`
-    text = text.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.03);padding:2px 6px;border-radius:4px;">$1</code>');
-
-    // Close list if it was open at the end
-    if (inList) text += '</ul>';
-
-    return text;
-  }
-
-  function createAssistantPlaceholder(){
-    const wrap = addMessage('assistant','');
-    wrap.style.position = 'relative'; // ensure loader positions correctly
-
-    const loader = document.createElement('div');
-    loader.className = 'loader';
-    loader.innerHTML = `
-      <div class="dot"></div>
-      <div class="dot"></div>
-      <div class="dot"></div>
-    `;
-    loader.style.position = 'absolute';
-    loader.style.top = '50%';
-    loader.style.left = '50%';
-    loader.style.transform = 'translate(-50%, -50%)';
-
-    wrap.appendChild(loader);
-    return {wrap, loader};
-  }
-
-  async function sendInitialMessage(msg) {
-    if (hasSentInitialMessage) return;
-    hasSentInitialMessage = true;
-    // enthusiasism typo fixed
-    // const initialMessage = "" ;
-    // if (msg){
-    //   initialMessage = msg;
-    // }
-    // initialMessage = "Hello, introduce yourself in enthusiasism, including your name and some emojis!";
-    
-    // Disable send button and input during request
-    sendBtn.disabled = true;
-    input.disabled = true;
-    input.placeholder = "Initializing AI Assistant...";
-
-    const {wrap, loader} = createAssistantPlaceholder();
-    let acc = '';
-    let loaderRemoved = false;
-
-    function removeLoader() {
-      if (!loaderRemoved && loader && loader.parentNode) {
-        loader.remove();
-        loaderRemoved = true;
-      }
-    }
-
-    try {
-      const resp = await fetch('http://localhost:8000/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: msg, 
-          conversation_id: conversationId, 
-          use_system_instructions: true, // Enable system instructions for initial message
-          stream: true 
-        })
-      });
-
-      if (!resp.body) {
-        wrap.innerHTML = 'No response'; 
-        removeLoader();
-        enableInput();
-        return;
-      }
-      
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split(/\r?\n/); 
-        buf = lines.pop();
-        
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          
-          if (payload === '[DONE]') {
-            removeLoader();
-            
-            // Invoke structure parser when response is fully generated
-            if (acc.trim()) {
-              vscode.postMessage({
-                command: 'llm_output',
-                text: acc
-              });
-            }
-            
-            enableInput();
-            return;
+    // Listen for messages from the extension
+    window.addEventListener('message', e => {
+      const msg = e.data;
+      if (msg.type === 'addMessage') {
+        // This is for user messages or maybe fallback
+        addMessage(msg.sender, msg.message, false);
+      } else if (msg.type === 'botChunk') {
+        // If this is the first chunk, create the assistant message div
+        if (!currentAssistantMessageDiv) {
+          if (statusIntervalId) {
+            clearInterval(statusIntervalId);
+            statusIntervalId = null;
           }
-          
-          try {
-            const obj = JSON.parse(payload);
-            if (obj.chunk) {
-              acc += obj.chunk;
-              wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
-              
-              chat.scrollTop = chat.scrollHeight;
-              
-              // Remove loader when first chunk arrives
-              if (!loaderRemoved) {
-                removeLoader();
-              }
-              
-              if (obj.done) {
-                // Invoke structure parser when done is true
-                console.log('Final chunk received, invoking structure parser.');
-                console.log('\n\n\nFinal response from chatbot.html :\n', acc);
-                if (acc.trim()) {
-                  vscode.postMessage({
-                    command: 'llm_output',
-                    text: acc
-                  });
-                }
-                
-                enableInput();
-              }
+          if (currentSystemMessageDiv) {
+            currentAssistantMessageDiv = currentSystemMessageDiv;
+            currentSystemMessageDiv = null;
+            currentAssistantMessageDiv.querySelector('.rendered').innerHTML = ''; // Clear status text
+          } else {
+            currentAssistantMessageDiv = document.createElement('div');
+            currentAssistantMessageDiv.className = 'message assistant';
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'rendered';
+            currentAssistantMessageDiv.appendChild(contentDiv);
+            chat.appendChild(currentAssistantMessageDiv);
+          }
+        }
+        const contentDiv = currentAssistantMessageDiv.querySelector('.rendered');
+        currentAssistantMessageContent += msg.chunk;
+        contentDiv.innerHTML = renderMessageText(currentAssistantMessageContent);
+        chat.scrollTop = chat.scrollHeight;
+      } else if (msg.type === 'botMessage') {
+        // Final message: if we have been streaming, replace content; otherwise create new
+        if (currentAssistantMessageDiv) {
+          // Already streaming, just ensure content is complete
+          const contentDiv = currentAssistantMessageDiv.querySelector('.rendered');
+          contentDiv.innerHTML = renderMessageText(msg.message);
+          currentAssistantMessageDiv = null;
+          currentAssistantMessageContent = '';
+        } else {
+          // No streaming, just add the message normally
+          addMessage('assistant', msg.message, false);
+        }
+        // Optionally handle actions
+        if (msg.actions) {
+          console.log('Actions:', msg.actions);
+        }
+      } else if (msg.type === 'error') {
+        if (statusIntervalId) {
+          clearInterval(statusIntervalId);
+          statusIntervalId = null;
+        }
+        // Show error message
+        addMessage('assistant', `❌ ${msg.message}`, false);
+        // Reset streaming state
+        currentAssistantMessageDiv = null;
+        currentAssistantMessageContent = '';
+      } else if (msg.type === 'clearMessages') {
+        if (statusIntervalId) {
+          clearInterval(statusIntervalId);
+          statusIntervalId = null;
+        }
+        chat.innerHTML = '';
+        currentAssistantMessageDiv = null;
+        currentAssistantMessageContent = '';
+        lastStatusStr = '';
+        currentSystemMessageDiv = null;
+      } else if (msg.type === 'statusUpdate') {
+        if (msg.data && msg.data.message) {
+          const str = msg.data.object ? msg.data.object + '|' + msg.data.message : msg.data.message;
+          if (str !== lastStatusStr) {
+            lastStatusStr = str;
+            let textToShow = `ℹ️ ${msg.data.message}`;
+            if (msg.data.message.includes('INITIAL')) {
+              textToShow = msg.data.message;
+            } else if (msg.data.object === 'LLM' && msg.data.message === 'THINKING') {
+              textToShow = 'ℹ️ Thinking';
             }
-          } catch (e) {
-            console.error('Error parsing JSON:', e);
+
+            if (!currentSystemMessageDiv) {
+              currentSystemMessageDiv = document.createElement('div');
+              currentSystemMessageDiv.className = 'message assistant';
+              const contentDiv = document.createElement('div');
+              contentDiv.className = 'rendered';
+              currentSystemMessageDiv.appendChild(contentDiv);
+              chat.appendChild(currentSystemMessageDiv);
+            }
+
+            statusBaseText = textToShow;
+            statusIsThinking = (msg.data.object === 'LLM' && msg.data.message === 'THINKING');
+            statusSeconds = 0;
+            statusDotCount = 1;
+
+            currentSystemMessageDiv.querySelector('.rendered').innerHTML = statusBaseText + '.';
+            chat.scrollTop = chat.scrollHeight;
+
+            if (statusIntervalId) clearInterval(statusIntervalId);
+            statusIntervalId = setInterval(() => {
+              if (!currentSystemMessageDiv) {
+                clearInterval(statusIntervalId);
+                return;
+              }
+              statusSeconds++;
+              statusDotCount = (statusDotCount % 4) + 1; // 1, 2, 3 dots
+              let dots = '.'.repeat(statusDotCount);
+
+              let displayStr = statusBaseText;
+              if (statusIsThinking && statusSeconds >= 5) {
+                const moreCount = Math.floor(statusSeconds / 5);
+                if (moreCount === 1) {
+                  displayStr = 'ℹ️ Thinking harder';
+                } else if (moreCount > 1) {
+                  const mores = 'more '.repeat(moreCount - 1);
+                  displayStr = `ℹ️ Thinking ${mores}harder`;
+                }
+              }
+
+              let cDiv = currentSystemMessageDiv.querySelector('.rendered');
+              if (cDiv) cDiv.innerHTML = displayStr + dots;
+            }, 1000);
           }
         }
       }
+    });
+  </script>
 
-      removeLoader();
-      wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
-      
-      // Additional safety check - invoke structure parser if not already invoked
-      if (acc.trim()) {
-        vscode.postMessage({
-          command: 'llm_output',
-          text: acc
-        });
-      }
-      
-    } catch (e) {
-      removeLoader();
-      wrap.querySelector('.rendered').innerHTML = '<span style="color:#ff8fa3">' + escapeHtml(String(e)) + '</span>';
-    } finally {
-      enableInput();
-    }
-  }
-
-  function enableInput() {
-    sendBtn.disabled = false;
-    input.disabled = false;
-    input.placeholder = "Type your message...";
-    input.focus();
-  }
-
-  async function sendMessage(msg) {
-    const thinkingSelect = document.getElementById("Thinking");
-    let selectedValue = thinkingSelect.value;
-    if (!msg.trim()) return;
-    
-    // Disable send button during request to prevent multiple submissions
-    sendBtn.disabled = true;
-    input.disabled = false;
-    
-    addMessage('user', escapeHtml(msg));
-    input.value = '';
-
-    const {wrap, loader} = createAssistantPlaceholder();
-    let acc = '';
-    let loaderRemoved = false; // Track if loader has been removed
-
-    function removeLoader() {
-      if (!loaderRemoved && loader && loader.parentNode) {
-        loader.remove();
-        loaderRemoved = true;
-      }
-    }
-
-    try {
-      const resp = await fetch('http://localhost:8000/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: msg, 
-          conversation_id: conversationId, 
-          use_system_instructions: false, // Don't use system instructions for regular messages
-          stream: true 
-        })
-      });
-
-      if (!resp.body) {
-        wrap.innerHTML = 'No response'; 
-        removeLoader();
-        enableInput();
-        return;
-      }
-      
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split(/\r?\n/); 
-        buf = lines.pop();
-        
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          
-          if (payload === '[DONE]') {
-            removeLoader();
-            
-            // Invoke structure parser when response is fully generated
-            if (acc.trim()) {
-              vscode.postMessage({
-                command: 'llm_output',
-                text: acc
-              });
-            }
-            
-            enableInput();
-            return;
-          }
-          
-          try {
-            const obj = JSON.parse(payload);
-            if (obj.chunk) {
-              acc += obj.chunk;
-              wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
-              
-              chat.scrollTop = chat.scrollHeight;
-              
-              // Remove loader when first chunk arrives
-              if (!loaderRemoved) {
-                removeLoader();
-              }
-              
-              if (obj.done) {
-                // Invoke structure parser when done is true
-                console.log('Final chunk received, invoking structure parser.');
-                console.log('\n\n\nFinal response from chatbot.html :\n', acc);
-                if (acc.trim()) {
-                  vscode.postMessage({
-                    command: 'llm_output',
-                    text: acc
-                  });
-                }
-                
-                enableInput();
-              }
-            }
-          } catch (e) {
-            console.error('Error parsing JSON:', e);
-          }
-        }
-      }
-
-      removeLoader();
-      wrap.querySelector('.rendered').innerHTML = renderAccumulated(acc);
-      
-      // Additional safety check - invoke structure parser if not already invoked
-      if (acc.trim()) {
-        vscode.postMessage({
-          command: 'llm_output',
-          text: acc
-        });
-      }
-      
-    } catch (e) {
-      removeLoader();
-      wrap.querySelector('.rendered').innerHTML = '<span style="color:#ff8fa3">' + escapeHtml(String(e)) + '</span>';
-    } finally {
-      enableInput();
-    }
-  }
-
-  sendBtn.onclick = () => sendMessage(input.value);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { 
-      e.preventDefault(); 
-      sendMessage(input.value);
-    }
-  });
-
-  // Remove the initial welcome message since we're sending the auto message
-  // addMessage('assistant','<div style="opacity:0.9">Hello! Type a question and press <strong>Send</strong>.</div>');
-})();
-</script>
 </body>
+
 </html>
