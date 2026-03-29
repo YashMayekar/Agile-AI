@@ -57,17 +57,17 @@ export interface ChatHistoryEntry {
 export interface ProjectState {
   projectId: string;
   mode: "greenfield" | "brownfield" | null;
-  phase: "planning" | "designing" | "development" ;
+  phase: "planning" | "designing" | "development" | "testing";
   currentStepId: number | string | null;   // current step (or instance) to execute
   currentAgent: string;
 
   systemStatus: string;
 
-  workflowFile: string ;
+  workflowFile: string;
 
   documents: Record<string, ProjectDocument>;
   dialogueHistory?: Array<{ role: "user" | "assistant"; content: string }>;
-  
+
   // One‑time completed steps (steps that will never be repeated)
   completedSteps: (number | string)[];
 

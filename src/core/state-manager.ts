@@ -1,28 +1,28 @@
-// import { ProjectState } from "./project-state/project-state.model";
-// import { ProjectStateRepository } from "./project-state/project-state.repository";
-// import { logEvent, logger } from "../utils/logger";
-// import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
-// import path from "path/win32";
-// import { promises as fs } from "fs";
+import { ProjectState } from "./project-state/project-state.model";
+import { ProjectStateRepository } from "./project-state/project-state.repository";
+import { logEvent, logger } from "../utils/logger";
+import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
+import path from "path/win32";
+import { promises as fs } from "fs";
 
 
-// const MODULE = "state-manager.ts";
+const MODULE = "state-manager.ts";
 
-// export class StateManager {
-//   static load(projectId: string): ProjectState {
-//     logger.debug(`[${MODULE}] Loading state for project: ${projectId}`);
-//     const state = ProjectStateRepository.load(projectId);
-//     logger.debug(`[${MODULE}] State loaded successfully`);
-//     return state;
-//   }
+export class StateManager {
+  static load(projectId: string): ProjectState {
+    logger.debug(`[${MODULE}] Loading state for project: ${projectId}`);
+    const state = ProjectStateRepository.load(projectId);
+    logger.debug(`[${MODULE}] State loaded successfully`);
+    return state;
+  }
 
-//   static save(projectId: string, state: ProjectState) {
-//     logger.debug(`[${MODULE}] Validating state before save for project ${projectId}`);
-//     // SchemaValidator.validate("project-state.schema.json", state);
-//     ProjectStateRepository.save(projectId, state);
-//     logger.debug(`[${MODULE}] State saved for project ${projectId}`);
-//   }
-
+  static save(projectId: string, state: ProjectState) {
+    logger.debug(`[${MODULE}] Validating state before save for project ${projectId}`);
+    // SchemaValidator.validate("project-state.schema.json", state);
+    ProjectStateRepository.save(projectId, state);
+    logger.debug(`[${MODULE}] State saved for project ${projectId}`);
+  }
+}
 //   static updateDocument(state: ProjectState, docName: string) {
 //     const resolvedName = WorkflowEngine.resolvePlaceholders(docName, state);
 //     logger.debug(`[${MODULE}] Updating document: ${docName} -> resolved: ${resolvedName}`);

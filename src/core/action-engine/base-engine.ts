@@ -7,14 +7,12 @@ import { WriteHandler } from "./write.action";
 import { DeleteHandler } from "./delete.action";
 import { UpdateHandler } from "./update.action";
 import { SwitchHandler } from "./switch.action";
-import { llmInstances } from "../../api/project.controller";
-import { OllamaAdapter } from "../../llm/ollama.adapter";
-import { Orchestrator } from "../orchestrator";
+import { WorkflowHandler } from "./workflow.action";
 
 const MODULE = "base-engine.ts";
 
 export interface Action {
-  type: "READ" | "WRITE" | "DELETE" | "UPDATE" | "SWITCH-AG";
+  type: "READ" | "WRITE" | "DELETE" | "UPDATE" | "SWITCH-AG" | "WORKFLOW" | "NONE";
   target: string;
   content: string;
 }
@@ -34,7 +32,7 @@ type ActionMeta = Pick<Action, "type" | "target">;
 
 export interface ActionHandler {
   execute(
-    projectId: string, 
+    projectId: string,
     safePath: string,
     action: Action,
     context: {
@@ -42,14 +40,15 @@ export interface ActionHandler {
       sysResults: Action[];
       cliActions: Action[];
     }
-  ): void;
+  ): void | Promise<void>;
 }
 
 export class BaseActionEngine {
   public static sysResults: Action[] = [];
   public static cliActions: Action[] = [];
   public static skippedSYSactions: ActionMeta[] = []
-  private static aggregatedReadResults: { target: string; content: string }[] = [];
+  public static ReadResults: { target: string; content: string }[] = [];
+  public static FileActions = ["READ", "WRITE", "DELETE", "UPDATE"]
 
 
   private static handlers: Map<string, ActionHandler> = new Map([
@@ -57,6 +56,7 @@ export class BaseActionEngine {
     ["WRITE", new WriteHandler()],
     ["DELETE", new DeleteHandler()],
     ["UPDATE", new UpdateHandler()],
+    ["WORKFLOW", new WorkflowHandler()],
     ["SWITCH-AG", new SwitchHandler()],
   ]);
 
@@ -68,7 +68,7 @@ export class BaseActionEngine {
       if (!parsed || typeof parsed !== "object") {
         throw new Error("Invalid response structure");
       }
-    logger.debug(`[${MODULE}] Response Parsed Successfully..`);
+      logger.debug(`[${MODULE}] Response Parsed Successfully..`);
 
       return parsed as ActionResponse;
     } catch (e: any) {
@@ -105,21 +105,21 @@ export class BaseActionEngine {
   }
 
   static getAggregatedReadContext(): string {
-    if (!this.aggregatedReadResults.length) return "";
+    if (!this.ReadResults.length) return "";
     return `# READ ACTION RESULTS:
-${this.aggregatedReadResults
+${this.ReadResults
         .map(r => `\`\`\`#${r.target}:\n${r.content}\`\`\``)
         .join("\n\n")}
 `;
   }
 
   static getSkippedSteps(): string {
-    if (!this.skippedSYSactions) {  return "NO ACTIONS SKIPPED"  }
+    if (!this.skippedSYSactions) { return "NO ACTIONS SKIPPED" }
     return `# SKIPPED ACTIONS:
 ${this.skippedSYSactions
-  .map(ac => `# ${ac.type} - ${ac.target}`)
-  .join("\n\n")
-}
+        .map(ac => `# ${ac.type} - ${ac.target}`)
+        .join("\n\n")
+      }
     
 `
   }
@@ -133,28 +133,40 @@ ${this.skippedSYSactions
     }
 
     // Reset per‑cycle aggregation
-    this.aggregatedReadResults = [];
+    this.ReadResults = [];
 
     for (const act of actions) {
       try {
-        const parsedPath = this.getPath(act.target);
-        if (!parsedPath) {
-          logger.warn(`[${MODULE}] Invalid target format: ${act.target}`);
-          continue;
+
+        let safePath = ""
+
+        if (this.FileActions.includes(act.type)) {
+          
+          const parsedPath = this.getPath(act.target);
+          if (!parsedPath) {
+            logger.warn(`[${MODULE}] Invalid target format: ${act.target}`);
+            continue;
+          }
+
+          // CLI actions: encode and store separately
+          if (parsedPath.device === "CLI") {
+            const encodedAction: Action = {
+              ...act,
+              content: Buffer.from(act.content || "").toString("base64"),
+            };
+            this.cliActions.push(encodedAction);
+            continue;
+          }
+          
+          safePath = this.resolveSafePath(projectId, parsedPath.path);
+
+        } else {
+          safePath = act.target
         }
 
-        // CLI actions: encode and store separately
-        if (parsedPath.device === "CLI") {
-          const encodedAction: Action = {
-            ...act,
-            content: Buffer.from(act.content || "").toString("base64"),
-          };
-          this.cliActions.push(encodedAction);
-          continue;
-        }
 
         // If Read request encountered then only perform read and skip the rest
-        if (act.type === "READ") { readActionEncountered = true}
+        if (act.type === "READ") { readActionEncountered = true }
         if (readActionEncountered && act.type !== "READ") {
           this.skippedSYSactions.push({
             type: act.type,
@@ -162,7 +174,7 @@ ${this.skippedSYSactions
           });
           continue
         }
-        
+
         // SYS actions: delegate to appropriate handler
         const handler = this.handlers.get(act.type);
         if (!handler) {
@@ -170,9 +182,8 @@ ${this.skippedSYSactions
           continue;
         }
 
-        const safePath = this.resolveSafePath(projectId, parsedPath.path);
-        handler.execute(projectId, safePath, act, {
-          aggregatedReadResults: this.aggregatedReadResults,
+        await handler.execute(projectId, safePath, act, {
+          aggregatedReadResults: this.ReadResults,
           sysResults: this.sysResults,
           cliActions: this.cliActions,
         });
@@ -181,29 +192,29 @@ ${this.skippedSYSactions
       }
     }
 
-    if (this.aggregatedReadResults.length) {
-      logger.info(`[${MODULE}] Updating the LLM with READ contents`)
-      let llm = llmInstances.get(projectId);
-      if (!llm) { llm = new OllamaAdapter(); }
-      const input = `
-These are the result of the READ request from previous response,
-${this.getAggregatedReadContext()}
+    //     if (this.aggregatedReadResults.length) {
+    //       logger.info(`[${MODULE}] Updating the LLM with READ contents`)
+    //       let llm = llmInstances.get(projectId);
+    //       if (!llm) { llm = new OllamaAdapter(); }
+    //       const input = `
+    // These are the result of the READ request from previous response,
+    // ${this.getAggregatedReadContext()}
 
-And there might be some responses, that were skipped due to this READ actions:
-${this.getSkippedSteps()}
+    // And there might be some responses, that were skipped due to this READ actions:
+    // ${this.getSkippedSteps()}
 
-*See the CONVERSATION HISTORY* to know about what you were doing after reading,
-and also consider any skipped ACTIONS.
-RESPOND ACCORDINGLY
-`
+    // *See the CONVERSATION HISTORY* to know about what you were doing after reading,
+    // and also consider any skipped ACTIONS.
+    // RESPOND ACCORDINGLY
+    // `
 
-      console.log(`INPUT CREATED FROM READ:\n${input}`)
-      const RES = await Orchestrator.handleSystemInput(projectId, input, llm);
-      console.log("LLM OUTPUT:", RES.res);
-      console.log("ACTIONS:", RES.actions);
+    //       console.log(`INPUT CREATED FROM READ:\n${input}`)
+    //       const RES = await Orchestrator.handleSystemInput(projectId, input, llm);
+    //       console.log("LLM OUTPUT:", RES.res);
+    //       console.log("ACTIONS:", RES.actions);
 
-    }
-    this.aggregatedReadResults = []
+    //     }
+    //     this.aggregatedReadResults = []
 
     return {
       sysResults: this.sysResults,

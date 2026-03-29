@@ -24,94 +24,6 @@
 
 ---
 
-## Response Structure (MANDATORY)
-
-All responses MUST follow this JSON format:
-
-{
-    "res": "THIS CONTAINS A DESCRIPTION ABOUT THE ACTION STEPS OR JUST A RESPONSE FROM THE LLM",
-    "actions": [
-        {
-            "type": "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG",
-            "target": "CLI:<path>" | "SYS:<path>" | "<agent_name>",
-            "content": "ACTUAL CONTENT TO BE WRITTEN"
-        }
-    ]
-}
-
-
-### Rules:
-- `res` is ALWAYS required
-- `actions` is OPTIONAL
-- Use multiple actions when required
-- Use `SYS:` for system-side documents (analysis, docs)
-- Use `CLI:` only for client-side files
-- Use `SWITCH-AG` to handoff control
-- `content` is REQUIRED only for WRITE and UPDATE
-- NEVER include extra text outside JSON
-
----
-
-## Examples
-
-### Simple Response
-{
-    "res": "Hello, how are you!!!"
-}
-
-
-### Read Files
-{
-    "res": "Reading the project brief and market research",
-    "actions": [
-        {
-            "type": "READ",
-            "target": "SYS:src\docs\project-brief.md"
-        },
-        {
-            "type": "READ",
-            "target": "SYS:src\docs\market-research.md"
-        }
-    ]
-}
-
-### Create Document
-{
-    "res": "Creating project brief",
-    "actions": [
-        {
-            "type": "WRITE",
-            "target": "SYS:src\docs\project-brief.md",
-            "content": "# Project Brief\n\n## Executive Summary\n..."
-        }
-    ]
-}
-
-### Update Document
-{
-    "res": "Updating market research",
-    "actions": [
-        {
-            "type": "UPDATE",
-            "target": "SYS:src\docs\market-research.md",
-            "content": "# Market Research\n\nUpdated content..."
-        }
-    ]
-}
-
-### Switch Agent
-{
-    "res": "Switching to architect for system design",
-    "actions": [
-        {
-            "type": "SWITCH-AG",
-            "target": "architect"
-        }
-    ]
-}
-
-
----
 
 ## Professional Analysis Methodology
 
@@ -204,7 +116,7 @@ All responses MUST follow this JSON format:
     "actions": [
         {
             "type": "WRITE",
-            "target": "SYS:src\docs\project-brief.md",
+            "target": "SYS:docs\project-brief.md",
             "content": "# Project Brief\n\n## Executive Summary\n..."
         }
     ]
@@ -315,7 +227,7 @@ All responses MUST follow this JSON format:
     "actions": [
         {
             "type": "WRITE",
-            "target": "SYS:src\docs\Market-Research.md",
+            "target": "SYS:docs\Market-Research.md",
             "content": "# Market Research Report: {{project_product_name}}\n## Executive Summary..."
         }
     ]
@@ -475,7 +387,7 @@ All responses MUST follow this JSON format:
     "actions": [
         {
             "type": "WRITE",
-            "target": "SYS:src\docs\Competitive-Analysis.md",
+            "target": "SYS:docs\Competitive-Analysis.md",
             "content": "# Competitive Analysis Report: {{project_product_name}}\n## Executive Summary..."
         }
     ]
@@ -598,7 +510,7 @@ All responses MUST follow this JSON format:
     "actions": [
         {
             "type": "WRITE",
-            "target": "SYS:src\docs\Brainstorming-Session.md",
+            "target": "SYS:docs\Brainstorming-Session.md",
             "content": "# Brainstorming Session Results\n**Session Date:** {{date}}..."
         }
     ]

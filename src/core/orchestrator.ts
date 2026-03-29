@@ -5,6 +5,8 @@ import { ContextBuilder } from "./context-builder";
 import { ExecutionLock } from "./execution-lock";
 import { MemoryManager } from "./memory-manager";
 import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
+import { systemStatuses } from "../api/project.controller";
+import { StateManager } from "./state-manager";
 
 const MODULE = "orchestrator.ts";
 
@@ -18,7 +20,6 @@ export class Orchestrator {
    */
   public static FullPrompt: string = "";
   public static context: string = "";
-  private static agent: string = "";
 
   static async *handleUserInput(
     projectId: string,
@@ -28,15 +29,19 @@ export class Orchestrator {
 
     ExecutionLock.acquire(projectId);
     logger.info(`[${MODULE}] EXECUTION LOCK ENABLE - Processing input`)
+    systemStatuses.set(projectId, { object: "", message: "CONNECTING TO gpt-oss:20b model..." });
 
     let fullResponse: string = "";
     let currentWorkflow: WorkflowStep | null = null;
-    let agent: string = "";
-    let currentStepID = 0;
+    let agent: string = "orchestrator";
+    
+    
+    let currentStepID = Number(StateManager.load(projectId).currentStepId) || 0;
+    let workflowFile = StateManager.load(projectId).workflowFile || "greenfield.yaml";
 
 
     try {
-      WorkflowEngine.loadWorkflow("greenfield.yaml")
+      WorkflowEngine.loadWorkflow(workflowFile)
       currentWorkflow = WorkflowEngine.getStepById(currentStepID)
     } catch (e) {
       logger.error(`[${MODULE}] Error in loading worlflow step: ${e}`)
@@ -48,7 +53,6 @@ export class Orchestrator {
         // Error handling needs to be implemented...
       }
       agent = currentWorkflow.agent;
-      this.agent = agent
     } catch (e) {
       logger.error(`[${MODULE}] Error in loading ${agent} prompt: ${e}`)
     }
@@ -65,21 +69,29 @@ export class Orchestrator {
 
 
       this.FullPrompt = `
-      This is the file structure of the user's code base:
-      \`\`\`
-      ${await ContextBuilder.getClientFS(projectId)}
-      \`\`\`
-      Here the paths with no extension '.' are just empty folders
+HERE is the CLIENT SIDE FILE STRUCTURE, if you need to perform actions on client side:
+\`\`\`
+${await ContextBuilder.getClientFS(projectId)}
+\`\`\`
+Here the paths with no extension '.' are just empty folders
 
-      Understand the context and repond to the User's Input:
-      ${userInput}
+only in this format\n${ContextBuilder.response_structure}
 
-      only in this format\n${ContextBuilder.response_structure}`
+Here is the latest few conversation:
+${MemoryManager.getLastNConversations(projectId, 3)}
 
-        
+Understand the,
+*PROJECT CONTEXT*
+*CONVERSATION HISTORY*
+repond to the User's Input in the CORRECT FORMAT:
+***${userInput}***
+`
 
-      // Stream the response
+
+      console.log(`FULL CONTEXT:\n${this.context.slice(100)}\n\nFULL PROMPT:\n${this.FullPrompt.slice(-100)}`)
+      systemStatuses.set(projectId, { object: "LLM", message: "THINKING" });
       const stream = llmInstance.generate(
+        projectId,
         {
           systemPrompt: this.context,
           userPrompt: this.FullPrompt,
@@ -92,12 +104,14 @@ export class Orchestrator {
           fullResponse += chunk.res;
         }
       }
-      // logger.debug(`[${MODULE}] full response from ${agent} LLM: ${fullResponse}`)
-      MemoryManager.addConversation(projectId, userInput, fullResponse, agent);
+      await Promise.resolve(MemoryManager.addConversation(projectId, userInput, fullResponse, agent));
 
+      console.log(`FULL RESPONSE:\n${fullResponse}`)
       let actions: Action[] | null
       actions = BaseActionEngine.getActions(fullResponse)
-      BaseActionEngine.executeActions(projectId, actions)
+      await BaseActionEngine.executeActions(projectId, actions)
+
+      systemStatuses.set(projectId, { object: "ORCHESTRATOR", message: "IDLE" });
 
 
       logger.info(`[${MODULE}] PROCESSING COMPLETED`);
@@ -110,63 +124,4 @@ export class Orchestrator {
     }
   }
 
-  static async handleSystemInput(
-    projectId: string,
-    userInput: string,
-    llm?: OllamaAdapter,
-  ): Promise<any> {
-    ExecutionLock.acquire(`${projectId}-BY-SYS`);
-    logger.info(`[${MODULE}] EXECUTION LOCK ENABLE - Processing input for system inputs`)
-
-    try {
-      // Use provided LLM or create a new one
-      const llmInstance = llm ?? new OllamaAdapter();
-
-      logger.debug(`[${MODULE}] Using existing Content and Full Prompt`)
-      // ✅ Await the response
-      console.log(`THE EXISTING CONTEXT:\n${this.context}`)
-      const fullResponse = await llmInstance.genComplete(
-        {
-          systemPrompt: this.context,
-          userPrompt: userInput
-        }
-      );
-
-      // ✅ Extract actual text (important for Ollama)
-      const responseText = typeof fullResponse === "string"
-        ? fullResponse
-        : fullResponse.response;
-
-      MemoryManager.addConversation(projectId, userInput, responseText, this.agent);
-
-      // ✅ Parse actions
-      const actions: Action[] | null = BaseActionEngine.getActions(responseText);
-
-      // ✅ Execute actions
-      // BaseActionEngine.executeActions(projectId, actions);
-
-      // ✅ Store memory
-
-      logger.info(`[${MODULE}] Completed processing for system inputs`);
-
-      // ✅ Return final response
-      return {
-        res: responseText,
-        actions
-      };
-
-    } catch (error: any) {
-      logger.error(`[${MODULE}] Processing failed: ${error.message}`);
-
-      return {
-        res: `Error: ${error.message}`,
-        actions: []
-      };
-
-    } finally {
-      ExecutionLock.release(`${projectId}-BY-SYS`);
-      logger.info(`[${MODULE}] EXECUTION LOCK DISABLE - Processing completed`)
-
-    }
-  }
 }

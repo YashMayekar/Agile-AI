@@ -17,6 +17,13 @@ export class FileSystem {
     }
   }
 
+  static deleteDir(dirPath: string) {
+    if (fs.existsSync(dirPath)) {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      logEvent("DIR_DELETED", { dirPath });
+    }
+  }
+
   static readFile(filePath: string): string {
     return fs.readFileSync(filePath, 'utf-8');
   }

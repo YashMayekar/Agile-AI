@@ -27,10 +27,9 @@ export class ReadHandler implements ActionHandler, BaseActionEngine {
       }
     } catch (e) {
       content = "READ_ERROR";
-        logger.error(`[${MODULE}] READ_ERROR for ${safePath}`)
-
+      logger.error(`[${MODULE}] READ_ERROR for ${safePath}`)
     }
-    
+
     context.aggregatedReadResults.push({
       target: action.target,
       content,
@@ -41,6 +40,6 @@ export class ReadHandler implements ActionHandler, BaseActionEngine {
       target: action.target,
       content,
     });
-    
+
   }
 }

@@ -25,105 +25,22 @@
 
 ---
 
-## Response Structure (MANDATORY)
-
-All responses MUST follow this JSON format:
-
-```
-
-{
-"res": "THIS CONTAINS A DESCRIPTION ABOUT THE ACTION STEPS OR JUST A RESPONSE FROM THE LLM",
-"actions": [
-{
-"type": "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG",
-"target": "CLI:<path>" | "SYS:<path>" | "<agent_name>",
-"content": "ACTUAL CONTENT TO BE WRITTEN"
-}
-]
-}
-
-```
-
-### Rules:
-- `res` is ALWAYS required
-- `actions` is OPTIONAL
-- Use multiple actions when needed
-- Use `SYS:` for architecture and documentation
-- Use `CLI:` only for client-side implementation files
-- Use `SWITCH-AG` for handoff
-- `content` required only for WRITE/UPDATE
-- NEVER output anything outside JSON
-
----
-
-## Examples
-
-### Simple Response
-```
-
-{
-"res": "Reviewing PRD to extract technical requirements."
-}
-
-```
-
-### Read PRD
-```
-
-{
-"res": "Reading PRD document",
-"actions": [
-{
-"type": "READ",
-"target": "SYS:src\docs\prd.md"
-}
-]
-}
-
-```
-
-### Create Architecture
-```
-
-{
-"res": "Creating system architecture document",
-"actions": [
-{
-"type": "WRITE",
-"target": "SYS:src\docs\architecture.md",
-"content": "# System Architecture Document\n..."
-}
-]
-}
-
-```
-
-### Switch Agent
-```
-
-{
-"res": "Architecture complete. Handing over to developer.",
-"actions": [
-{
-"type": "SWITCH-AG",
-"target": "developer"
-}
-]
-}
-
-```
-
----
-
 ## Professional Architecture Methodology
 
 ### 1. Project Analysis & Requirements Synthesis
 
 #### PRD Review
 - ALWAYS start by reading PRD
-```
-READ → SYS:src\docs\prd.md
-```
+{
+    "res": "Reading the Product Requirement Document",
+    "actions": [
+        {
+            "type": "READ",
+            "target": "SYS:docs\prd.md"
+        }
+    ]
+}
+
 
 #### Technical Requirements Analysis
 ```
@@ -161,10 +78,9 @@ READ → SYS:src\docs\prd.md
 
 ### 2. Comprehensive Architecture Documentation
 
-#### System Architecture Document → `SYS:src\docs\architecture.md`
+#### System Architecture Document → `SYS:docs\architecture.md`
 
 ```
-
 # System Architecture Document
 
 ## 1. Executive Summary
@@ -404,7 +320,7 @@ interface Product {
 
 ### 3. Frontend Architecture (When Applicable)
 
-#### `SYS:src\docs\frontend-architecture.md`
+#### `SYS:docs\frontend-architecture.md`
 
 ```
 # Frontend Architecture Document
@@ -538,7 +454,7 @@ const routes = [
 
 ### 4. Brownfield Project Architecture
 
-#### `SYS:src\docs\brownfield-architecture.md`
+#### `SYS:docs\brownfield-architecture.md`
 
 ```
 # Brownfield Enhancement Architecture
@@ -580,10 +496,9 @@ const routes = [
 
 ### 5. Technical Research & Analysis
 
-#### `SYS:src\docs\technology-research.md`
+#### `SYS:docs\technology-research.md`
 
 ```
-
 # Technology Research & Evaluation
 
 ## Research Objective
@@ -633,10 +548,9 @@ const routes = [
 
 ## Architecture Validation Framework
 
-#### `SYS:src\docs\architecture-checklist.md`
+#### `SYS:docs\architecture-checklist.md`
 
 ```
-
 # Architecture Validation Checklist
 
 ## Requirements Alignment
@@ -679,7 +593,7 @@ const routes = [
 - Complex frontend → CREATE frontend-architecture.md
 - Existing system → CREATE brownfield architecture
 - Tech uncertainty → CREATE technology research
-- After completion → SWITCH-AG to developer
+- After completion → WORKFLOW next step
 
 ---
 
