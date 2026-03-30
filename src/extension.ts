@@ -41,6 +41,24 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
         if (line.trim() === '') { continue; };
         try {
           const chunk = JSON.parse(line);
+
+          // 1. Handle status updates from the stream
+          if (chunk.status) {
+            panel.webview.postMessage({
+              type: 'statusUpdate',
+              data: { message: chunk.status }
+            });
+          }
+
+          // 2. Handle errors from the stream
+          if (chunk.error) {
+            panel.webview.postMessage({
+              type: 'error',
+              message: chunk.error
+            });
+          }
+
+          // 3. Handle message content (chunks)
           if (chunk.res !== null && chunk.res !== undefined) {
             accumulatedMessage += chunk.res;
             panel.webview.postMessage({
@@ -48,6 +66,8 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
               chunk: chunk.res
             });
           }
+
+          // 4. Handle end-of-bunch (done marker)
           if (chunk.done === true) {
             panel.webview.postMessage({
               type: 'botMessage',
@@ -55,6 +75,8 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
               done: true,
               actions: []
             });
+            // Reset for the next bunch if any
+            accumulatedMessage = '';
           }
         } catch (err) {
           console.error('Failed to parse chunk:', line, err);
@@ -274,6 +296,12 @@ export function activate(context: vscode.ExtensionContext) {
       context.workspaceState.update('savedChats', savedChats);
       context.workspaceState.update(`chat_history_${projectId}`, undefined);
       sidebarProvider.refresh();
+
+      try {
+        await fetch(`http://localhost:4000/api/project/${projectId}`, { method: 'DELETE' });
+      } catch (err) {
+        console.error("Failed to delete chat from backend", err);
+      }
 
       // Optionally notify the user
       vscode.window.showInformationMessage("Chat deleted from sidebar");

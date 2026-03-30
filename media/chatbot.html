@@ -439,17 +439,22 @@
         contentDiv.innerHTML = renderMessageText(currentAssistantMessageContent);
         chat.scrollTop = chat.scrollHeight;
       } else if (msg.type === 'botMessage') {
-        // Final message: if we have been streaming, replace content; otherwise create new
+        // Final message for a bunch: if we have been streaming into a div, finalize it.
         if (currentAssistantMessageDiv) {
-          // Already streaming, just ensure content is complete
           const contentDiv = currentAssistantMessageDiv.querySelector('.rendered');
-          contentDiv.innerHTML = renderMessageText(msg.message);
+          if (msg.message) {
+            contentDiv.innerHTML = renderMessageText(msg.message);
+          }
           currentAssistantMessageDiv = null;
           currentAssistantMessageContent = '';
-        } else {
-          // No streaming, just add the message normally
+        } else if (msg.message) {
+          // No streaming div existed (e.g. no chunks yet), but we have a final message
           addMessage('assistant', msg.message, false);
         }
+        
+        // Always reset streaming content state for next bunch
+        currentAssistantMessageContent = '';
+
         // Optionally handle actions
         if (msg.actions) {
           console.log('Actions:', msg.actions);
@@ -530,13 +535,13 @@
               let dots = '.'.repeat(statusDotCount);
 
               let displayStr = statusBaseText;
-              if (statusIsThinking && statusSeconds >= 6) {
-                const moreCount = Math.floor(statusSeconds / 6);
+              if (statusIsThinking && statusSeconds >= 10) {
+                const moreCount = Math.floor(statusSeconds / 10);
                 if (moreCount === 1) {
                   displayStr = 'ℹ️ Thinking harder';
                 } else if (moreCount > 1) {
                   const mores = 'more '.repeat(moreCount - 1);
-                  displayStr = `ℹ️ Thinking ${mores}harder`;
+                  displayStr = `ℹ️ Thinking ${mores}longer`;
                 }
               }
 
