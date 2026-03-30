@@ -75,7 +75,8 @@ steps:
     name: Architecture Decision
     agent: pm
     condition: enhancement_type == "major"
-    requires: [prd.md]
+    requires: 
+      - prd.md
     after: arch_needed
     notes: "Decide whether new architecture documentation is needed."
     next: [9]
@@ -84,7 +85,8 @@ steps:
     name: Architecture Document
     agent: architect
     condition: enhancement_type == "major" && arch_needed == true
-    requires: [prd.md]
+    requires: 
+      - prd.md
     creates: [architecture.md]
     notes: "Create the architecture document for the major enhancement."
     next: [10]
@@ -93,7 +95,8 @@ steps:
     name: Artifact Validation
     agent: po
     condition: enhancement_type == "major"
-    requires: [prd.md]
+    requires: 
+      - prd.md
     creates: [validation-report.md]
     after: po_checklist_issues
     notes: "Validate PRD and architecture artifacts against checklist."
@@ -106,8 +109,12 @@ steps:
     name: Update Documents
     agent: pm
     condition: enhancement_type == "major" && po_checklist_issues == true
-    requires: [validation-report.md, prd.md]
-    updates: [prd.md, architecture.md]
+    requires: 
+      - validation-report.md
+      - prd.md
+    updates: 
+      - prd.md
+      - architecture.md
     notes: "Update PRD and architecture documents based on validation feedback."
     next: [10]
 
@@ -115,7 +122,8 @@ steps:
     name: Shard Documents
     agent: po
     condition: enhancement_type == "major"
-    requires: [prd.md]
+    requires: 
+      - prd.md
     after: stories
     notes: "Break down PRD into sharded stories for implementation."
     next: [13]
@@ -124,8 +132,10 @@ steps:
     name: Create Story File
     agent: sm
     condition: currentStoryIndex < stories.length
-    creates: ["story-{{storyIndex}}.md"]
-    requires: [sharded_docs]
+    creates: 
+     - "story-{{storyIndex}}.md"
+    requires: 
+      - sharded_docs
     notes: "Create a story file for the current story index."
     next: [14]
 
@@ -133,23 +143,28 @@ steps:
     name: Story Review (Optional)
     agent: pm
     condition: user_wants_story_review == true
-    requires: ["story-{{storyIndex}}.md"]
-    updates: ["story-{{storyIndex}}.md"]
+    requires: 
+      - "story-{{storyIndex}}.md"
+    updates: 
+      - "story-{{storyIndex}}.md"
     notes: "Review the story file (optional step)."
     next: [15]
 
   - id: 15
     name: Story Implementation
     agent: dev
-    requires: ["story-{{storyIndex}}.md"]
-    creates: ["implementation-{{storyIndex}}/"]
+    requires: 
+      - "story-{{storyIndex}}.md"
+    creates: 
+      - "implementation-{{storyIndex}}/"
     notes: "Implement the story as per the story file."
     next: [16]
 
   - id: 16
     name: QA Review
     agent: qa
-    requires: ["implementation-{{storyIndex}}/"]
+    requires: 
+      - "implementation-{{storyIndex}}/"
     after: qaLeftUnchecked
     notes: "QA review of the implementation."
     next:
@@ -161,8 +176,10 @@ steps:
     name: Address QA Feedback
     agent: dev
     condition: qaLeftUnchecked == true
-    requires: ["implementation-{{storyIndex}}/"]
-    updates: ["implementation-{{storyIndex}}/"]
+    requires: 
+      - "implementation-{{storyIndex}}/"
+    updates: 
+      - "implementation-{{storyIndex}}/"
     after: qaLeftUnchecked
     notes: "Address issues found during QA review."
     next: [16]
@@ -170,7 +187,8 @@ steps:
   - id: 18
     name: Mark Story Complete
     agent: sm
-    requires: ["implementation-{{storyIndex}}/"]
+    requires: 
+      - "implementation-{{storyIndex}}/"
     after: increment_story_index
     notes: "Mark the current story as complete and move to the next story."
     next: [13]
@@ -186,7 +204,8 @@ steps:
     name: Epic Retrospective (Optional)
     agent: po
     condition: user_requested_retrospective == true
-    creates: [epic-retrospective.md]
+    creates: 
+      - epic-retrospective.md
     notes: "Conduct an epic retrospective (optional)."
     next: [21]
 

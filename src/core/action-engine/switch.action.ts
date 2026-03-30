@@ -1,5 +1,6 @@
 import { logger } from "../../utils/logger";
 import { Action, ActionHandler } from "./base-engine";
+import { ProjectStateRepository } from "../project-state/project-state.repository";
 
 const MODULE = "switch.action.ts";
 
@@ -14,7 +15,17 @@ export class SwitchHandler implements ActionHandler {
       cliActions: Action[];
     }
   ): void {
-    // This action type is a no‑op in the engine
+
+    let state: any;
+    try {
+      state = ProjectStateRepository.load(projectId);
+    } catch (e: any) {
+      logger.error(`[${MODULE}] Failed to load project state: ${e?.message || e}`);
+      context.sysResults.push({ type: "WORKFLOW", target: action.target, content: "WORFLOW_LOAD_ERROR" });
+      return;
+    }
+
+    
     logger.info(`[${MODULE}] SWITCH-AG action ignored`);
   }
 }

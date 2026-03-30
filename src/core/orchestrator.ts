@@ -7,6 +7,8 @@ import { MemoryManager } from "./memory-manager";
 import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
 import { systemStatuses } from "../api/project.controller";
 import { StateManager } from "./state-manager";
+import fs from "fs";
+import { GeminiAdapter } from "../llm/gemini.adapter";
 
 const MODULE = "orchestrator.ts";
 
@@ -24,7 +26,7 @@ export class Orchestrator {
   static async *handleUserInput(
     projectId: string,
     userInput: string,
-    llm?: OllamaAdapter,
+    llm?: OllamaAdapter | GeminiAdapter,
   ): AsyncGenerator<{ res: string | null; done: boolean }, any, unknown> {
 
     ExecutionLock.acquire(projectId);
@@ -38,7 +40,6 @@ export class Orchestrator {
     
     let currentStepID = Number(StateManager.load(projectId).currentStepId) || 0;
     let workflowFile = StateManager.load(projectId).workflowFile || "greenfield.yaml";
-
 
     try {
       WorkflowEngine.loadWorkflow(workflowFile)
@@ -57,9 +58,28 @@ export class Orchestrator {
       logger.error(`[${MODULE}] Error in loading ${agent} prompt: ${e}`)
     }
 
+    let requiredFiles = "";
+    let missingFilesPrompt = "";
+    try {
+      if (currentWorkflow?.requires) {
+        for (const file of currentWorkflow.requires) {
+          const safePath = BaseActionEngine.resolveSafePath(projectId, `docs/${file}`);
+          if (!fs.existsSync(safePath)) { 
+            logger.warn(`[${MODULE}] Required file not found: ${file}\nExpected at path: ${safePath}`);  
+            requiredFiles += `- ${file}\n`;
+          }
+        }
+      missingFilesPrompt = requiredFiles ? `In the SYSTEM, The following required files are missing:\n${requiredFiles}\nACKNOWLEDGE the current input but ask user the INFORMATION NEEDED TO CREATE THEM.` : "";
+      }
+      
+    } catch (e) {
+      logger.error(`[${MODULE}] Error in loading ${agent} prompt: ${e}`)
+    }
+
     try {
       // Use provided LLM or create a new one
       const llmInstance = llm ?? new OllamaAdapter();
+      // const llmInstance = llm ?? new GeminiAdapter();
 
       try {
         this.context = ContextBuilder.buildFullContext(projectId, currentStepID, agent);
@@ -75,6 +95,8 @@ ${await ContextBuilder.getClientFS(projectId)}
 \`\`\`
 Here the paths with no extension '.' are just empty folders
 
+${missingFilesPrompt}
+
 only in this format\n${ContextBuilder.response_structure}
 
 Here is the latest few conversation:
@@ -88,7 +110,7 @@ repond to the User's Input in the CORRECT FORMAT:
 `
 
 
-      console.log(`FULL CONTEXT:\n${this.context.slice(100)}\n\nFULL PROMPT:\n${this.FullPrompt.slice(-100)}`)
+      console.log(`FULL CONTEXT:\n${this.context.slice(0, 100)}\n\nFULL PROMPT:\n${this.FullPrompt.slice(-100)}`)
       systemStatuses.set(projectId, { object: "LLM", message: "THINKING" });
       const stream = llmInstance.generate(
         projectId,

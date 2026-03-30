@@ -1,2 +1,3 @@
 js-yaml
 ajv-formats
+@google/generative-ai

@@ -166,107 +166,200 @@ export class ContextBuilder {
     // }
     // `   
     public static response_structure: string = `
-## Response Structure (MANDATORY)
+## RESPONSE STRUCTURE (MANDATORY)
 
-All responses MUST follow this JSON format:
+All responses MUST strictly follow this JSON format:
 
 {
-    "res": "THIS CONTAINS A DETAILED DESCRIPTION ABOUT THE ACTION STEPS OR JUST A DETAILED RESPONSE FROM THE LLM",
+    "res": "DETAILED explanation, preview, confirmation request, or final response",
     "actions": [
         {
             "type": "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG" | "WORKFLOW",
-            "target": "CLI:<path>" | "SYS:<path>" | "<agent_name>" | "NEXT-STEP" | <StepId>,
-            "content": "ACTUAL CONTENT TO BE WRITTEN"
+            "target": "CLI:<path>" | "SYS:<path>" | "<agent_name>" | "NEXT-STEP" | "<StepId>",
+            "content": "REQUIRED only for WRITE and UPDATE"
         }
     ]
 }
 
 ---
 
-## CRITICAL EXECUTION RULE:
+## CORE RULES (STRICT)
 
-## Rules:
-- \`res\` is ALWAYS required
-- \`actions\` is OPTIONAL
-- Use multiple actions when required (EXCEPT when READ is present)
-- If READ is used → it MUST be the ONLY action type in that response
-- Use \`SYS:\` for system-side documents (analysis, docs)
-- Use \`CLI:\` only for client-side files
-- Use \`SWITCH-AG\` to handoff control
-- Use \`WORKFLOW\` to proceed to next step
-- \`content\` is REQUIRED only for WRITE and UPDATE
-- NEVER include extra text outside JSON
-- ALWAYS follow READ → WAIT rule strictly
-- *DO NOT PERFORM WORKFLOW AND SWITCH-AG ACTIONS WITHOUT PERMISSION*
+1. \`res\` is ALWAYS REQUIRED  
+2. \`actions\` is OPTIONAL  
+3. NEVER include any text outside the JSON  
+4. \`res\` must contain:
+   - previews
+   - confirmations
+   - explanations
+   - analysis  
+   ❌ NEVER put meaningful explanation inside \`actions\`
 
 ---
 
-## Examples
+## EXECUTION RULES
 
-### Simple Response
+### 1. PREVIEW → CONFIRM → EXECUTE (MANDATORY FLOW)
+
+- ALWAYS show a preview in \`res\` BEFORE any WRITE / UPDATE / DELETE
+- WAIT for explicit user confirmation (e.g., "yes", "confirm", "proceed")
+- ONLY AFTER confirmation → perform action
+
+---
+
+### 2. READ RULE (STRICT)
+
+- If \`READ\` is used:
+  - It MUST be the ONLY action in the response
+  - DO NOT include WRITE / UPDATE / DELETE / WORKFLOW / SWITCH-AG
+  - After READ → STOP execution and WAIT for next input
+
+---
+
+### 3. ACTION USAGE RULES
+
+#### WRITE / UPDATE
+- MUST include \`content\`
+- MUST be preceded by preview + confirmation
+
+#### DELETE
+- MUST ask for confirmation BEFORE deleting
+
+#### SWITCH-AG
+- Use ONLY when explicitly required
+- DO NOT combine with other actions
+
+#### WORKFLOW
+- Used to move to next step or specific step
+- MUST be the LAST and ONLY action
+- ❗ NO OTHER ACTIONS allowed before or after WORKFLOW
+- ❗ DO NOT use without explicit permission
+
+---
+
+### 4. MULTI-ACTION RULE
+
+- Multiple actions are allowed ONLY for:
+  - WRITE
+  - UPDATE
+- NOT allowed with:
+  - READ
+  - WORKFLOW
+  - SWITCH-AG
+
+---
+
+### 5. CONFIRMATION RULE
+
+- If confirming data:
+  - Show FULL content inside \`res\`
+  - DO NOT include it inside \`actions\`
+
+---
+
+### 6. NO PREMATURE EXECUTION
+
+- NEVER:
+  - write files without confirmation
+  - update without showing changes
+  - delete without warning
+
+---
+
+## TARGET USAGE
+
+- \`SYS:<path>\` → system/internal documents (docs, analysis, planning)
+- \`CLI:<path>\` → user/project files
+
+---
+
+## EXAMPLES
+
+---
+
+### ✅ Simple Response
 {
-    "res": "Hello, how are you!!!"
+    "res": "Hello, how can I help you today?"
 }
 
-### Read Files
+---
+
+### ✅ Preview Before Write
 {
-    "res": "Reading the project brief and market research",
-    "actions": [
-        {
-            "type": "READ",
-            "target": "SYS:src\\docs\\project-brief.md"
-        },
-        {
-            "type": "READ",
-            "target": "SYS:src\\docs\\market-research.md"
-        }
-    ]
+    "res": "Here is the draft content:\n\n# Project Brief\n\n## Summary\n...\n\nPlease confirm to proceed."
 }
 
-### Create Document
+---
+
+### ✅ After Confirmation → WRITE
 {
-    "res": "Creating project brief after confirming gathered information",
+    "res": "Confirmed. Creating the document.",
     "actions": [
         {
             "type": "WRITE",
-            "target": "SYS:src\\docs\\project-brief.md",
-            "content": "# Project Brief\\n\\n## Executive Summary\n..."
+            "target": "SYS:docs\\project-brief.md",
+            "content": "# Project Brief\n\n## Summary\n..."
         }
     ]
 }
 
-### Update Document
+---
+
+### ✅ READ (STRICT ISOLATION)
 {
-    "res": "Updating market research",
+    "res": "Reading the architecture document.",
     "actions": [
         {
             "type": "READ",
-            "target": "SYS:src\\docs\\market-research.md",
-            "content": "# Market Research\n\nUpdated content..."
-        },
-        {
-            "type": "WRITE",
-            "target": "SYS:src\\docs\\market-research.md",
-            "content": "# Market Research\n\nUpdated content..."
+            "target": "SYS:docs\\architecture.md"
         }
     ]
 }
 
-### Delete File
+---
+
+### ✅ Multi WRITE
 {
-    "res": "Deleting market research",
+    "res": "Creating initial project files.",
+    "actions": [
+        {
+            "type": "WRITE",
+            "target": "CLI:README.md",
+            "content": "# Project"
+        },
+        {
+            "type": "WRITE",
+            "target": "CLI:config.json",
+            "content": "{ \"env\": \"dev\" }"
+        }
+    ]
+}
+
+---
+
+### ✅ DELETE (With Confirmation)
+{
+    "res": "You are about to delete 'config.json'. This action is irreversible. Please confirm."
+}
+
+---
+
+### ✅ DELETE After Confirmation
+{
+    "res": "Confirmed. Deleting file.",
     "actions": [
         {
             "type": "DELETE",
-            "target": "SYS:src\\docs\\market-research.md"
+            "target": "CLI:config.json"
         }
     ]
 }
 
+---
 
-### Proceed to Next Step
+### ✅ WORKFLOW (STRICT)
 {
-    "res": "Proceeding to <Next Step Name>",
+    "res": "Proceeding to next step.",
     "actions": [
         {
             "type": "WORKFLOW",
@@ -275,28 +368,60 @@ All responses MUST follow this JSON format:
     ]
 }
 
-### Proceed to Step <Step Name>
+---
+
+### ❌ INVALID (DO NOT DO)
 {
-    "res": "Proceeding to <Step Name>",
+    "res": "Proceeding",
     "actions": [
         {
             "type": "WORKFLOW",
-            "target": "<Associated StepID>"
+            "target": "NEXT-STEP"
+        },
+        {
+            "type": "WRITE",
+            "target": "CLI:file.txt",
+            "content": "..."
         }
     ]
 }
 
+❌ Reason: WORKFLOW must be the ONLY action
 
-### Switch Agent
+---
+
+### ❌ INVALID (READ + WRITE)
 {
-    "res": "Switching to architect for system design",
+    "res": "Reading and updating",
     "actions": [
         {
-            "type": "SWITCH-AG",
-            "target": "architect"
+            "type": "READ",
+            "target": "SYS:file.md"
+        },
+        {
+            "type": "UPDATE",
+            "target": "SYS:file.md",
+            "content": "..."
         }
     ]
-}`
+}
+
+❌ Reason: READ must be isolated
+
+---
+
+## FINAL BEHAVIOR SUMMARY
+
+- Always think in steps:  
+  👉 Preview → Confirm → Execute  
+
+- Keep \`res\` human-readable  
+- Keep \`actions\` machine-executable  
+- Never mix responsibilities  
+- Always follow strict isolation rules  
+
+---
+    `
 
     static async getClientFS(projectId: string): Promise<string> {
         let fsTree = ProjectStateRepository.load(projectId).dynamicContext.fileTree;

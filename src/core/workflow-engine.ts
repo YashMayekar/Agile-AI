@@ -79,6 +79,11 @@
         return steps
     }
 
+    static getRequiredFiles(stepId: number): string[] {
+      const step = this.getStepById(stepId);
+      return step.requires || [];
+    }
+
     static resolvePlaceholders(str: string, state: ProjectState): string {
       logger.debug(`[${MODULE}] Resolving placeholders in: "${str}"`);
       const resolved = str.replace(/\{\{(\w+)\}\}/g, (_, key) => {

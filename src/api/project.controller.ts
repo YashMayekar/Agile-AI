@@ -8,6 +8,7 @@ import { Orchestrator } from "../core/orchestrator";
 import { OllamaAdapter } from "../llm/ollama.adapter";
 import { BaseActionEngine } from "../core/action-engine/base-engine";
 import fs from "fs";
+import { GeminiAdapter } from "../llm/gemini.adapter";
 
 
 const MODULE = "project.controller.ts";
@@ -19,7 +20,7 @@ interface SystemStatus {
   message: string;
 }
 
-export const llmInstances = new Map<string, OllamaAdapter>();
+export const llmInstances = new Map<string, OllamaAdapter | GeminiAdapter>();
 export const systemStatuses = new Map<string, SystemStatus>();
 
 
@@ -131,113 +132,89 @@ router.post("/init", async (req, res) => {
  * POST /api/project/:projectId/m/s
  * Non‑streaming message handling (streaming via generator).
  */
+// src/api/project.controller.ts (relevant parts)
+
 router.post("/:projectId/m/s", async (req, res) => {
   res.setHeader("Content-Type", "application/json");
-
   const { projectId } = req.params;
   const { userInput } = req.body;
 
-
-  logger.debug(`[${MODULE}] Input received from user: ${userInput}`);
-
-  // Retrieve the cached LLM instance for this project
-  const llm = llmInstances.get(projectId);
+  // ensure LLM instance exists
+  let llm = llmInstances.get(projectId);
   if (!llm) {
-    const llm = new OllamaAdapter();
+    llm = new OllamaAdapter();
+    // llm = new GeminiAdapter();
     llmInstances.set(projectId, llm);
   }
 
+  // Helper to write a JSON line
+  const writeChunk = (data: any) => res.write(JSON.stringify(data) + "\n");
 
   try {
-    const stream = Orchestrator.handleUserInput(projectId, userInput, llm);
-    for await (const chunk of stream) {
-      res.write(JSON.stringify(chunk) + "\n");
+    // ---------- 1st response: direct user input ----------
+    const stream1 = Orchestrator.handleUserInput(projectId, userInput, llm);
+    for await (const chunk of stream1) {
+      writeChunk(chunk);
     }
-    // res.end();
+    writeChunk({ done: true });   // end of first message
+
+    // ---------- 2nd response: read results if any ----------
+    if (BaseActionEngine.ReadResults.length) {
+      writeChunk({ status: "Processing read results..." });
+      const readContext = BaseActionEngine.getAggregatedReadContext();
+      const skipped = BaseActionEngine.getSkippedSteps();
+      const input2 = `
+These are the results of READ requests provided by the SYSTEM from the previous response.
+${readContext}
+Skipped actions: ${skipped}
+See conversation history and respond accordingly.`;
+
+      const stream2 = Orchestrator.handleUserInput(projectId, input2, llm);
+      for await (const chunk of stream2) {
+        writeChunk(chunk);
+      }
+      writeChunk({ done: true });
+      BaseActionEngine.ReadResults = [];   // clear after use
+    }
+
+
+    if (BaseActionEngine.sysResults.length && BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].type === "WRITE") {
+      const input3 = `This is the file you just created. 
+      ${BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].target}
+      Now explain user the next steps.`;
+      
+      const stream3 = Orchestrator.handleUserInput(projectId, input3, llm);
+      for await (const chunk of stream3) {
+        writeChunk(chunk);
+      }
+      writeChunk({ done: true });  
+    }
+
+    // ---------- 3rd response: workflow greeting if needed ----------
+    if (BaseActionEngine.sysResults.length && BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].type === "WORKFLOW") {
+      writeChunk({ status: "Preparing project context..." });
+      const projectContextPath = path.join("projects", projectId, "docs", "project-context.md");
+      let projectContext = "";
+      if (FileSystem.exists(projectContextPath)) {
+        projectContext = `Project context:\n${fs.readFileSync(projectContextPath, "utf-8")}`;
+      }
+      const input3 = `${projectContext}\n\nGreet the user and introduce yourself in short, explaining what you will do now.`;
+
+      const stream3 = Orchestrator.handleUserInput(projectId, input3, llm);
+      for await (const chunk of stream3) {
+        writeChunk(chunk);
+      }
+      writeChunk({ done: true });
+    }
+    BaseActionEngine.sysResults.push({ type: "NONE", target: "", content: "" });
   } catch (error: any) {
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });
     } else {
-      res.write(JSON.stringify({ error: error.message }) + "\n");
+      writeChunk({ error: error.message });
     }
   }
-
-  if (BaseActionEngine.ReadResults.length) {
-    const llm = llmInstances.get(projectId);
-    if (!llm) {
-      const llm = new OllamaAdapter();
-      llmInstances.set(projectId, llm);
-    }
-
-    const input = `
-    These are the result of the READ request respones provided by the SYSTEM from the previous response,
-    ${BaseActionEngine.getAggregatedReadContext()}
-
-    And there might be some responses, that were skipped due to this READ actions:
-    ${BaseActionEngine.getSkippedSteps()}
-
-    *See the CONVERSATION HISTORY* to know about what you were doing after reading,
-    and also consider any skipped ACTIONS.
-    RESPOND ACCORDINGLY
-    `
-    try {
-      const stream = Orchestrator.handleUserInput(projectId, input, llm);
-      for await (const chunk of stream) {
-        res.write(JSON.stringify(chunk) + "\n");
-      }
-      // res.end();
-    } catch (error: any) {
-      if (!res.headersSent) {
-        res.status(500).json({ error: error.message });
-      } else {
-        res.write(JSON.stringify({ error: error.message }) + "\n");
-      }
-    }
-  }
-
-  BaseActionEngine.ReadResults = [];
-
-  if (BaseActionEngine.sysResults.length && BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].type === "WORKFLOW") {
-    const llm = llmInstances.get(projectId);
-    if (!llm) {
-      const llm = new OllamaAdapter();
-      llmInstances.set(projectId, llm);
-    }
-
-    // Check is the project-context file exist, if yes then load the project-context in the input prompt.
-
-    const projectContextPath = path.join(__dirname, projectId, "projects", projectId, "docs", "project-context.md");
-    // logger.debug(`[${MODULE}] Loading workflow from ${workflowPath}`);
-    let projectContext = "";
-    if (FileSystem.exists(projectContextPath)) {
-      projectContext = `This is the project context:\n${fs.readFileSync(projectContextPath, "utf-8")}`;
-    }
-    // logger.warn(`[${MODULE}] Project context file not found at ${projectContextPath}`);
-            
-    const inputPrompt = `${projectContext}\n\nGreet the user and introduce yourself in short and explain what you will do now`
-    
-    try {
-      const stream = Orchestrator.handleUserInput(projectId, inputPrompt, llm);
-      for await (const chunk of stream) {
-        res.write(JSON.stringify(chunk) + "\n");
-      }
-      // res.end();
-    } catch (error: any) {
-      if (!res.headersSent) {
-        res.status(500).json({ error: error.message });
-      } else {
-        res.write(JSON.stringify({ error: error.message }) + "\n");
-      }
-    }
-  }
-  BaseActionEngine.sysResults.push({
-      type: "NONE",
-      target: "",
-      content: ""
-    });
   res.end();
-  
-
 });
 
 export default router;

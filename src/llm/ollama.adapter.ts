@@ -42,7 +42,8 @@ const responseSchema = {
 export class OllamaAdapter implements LLMAdapter {
   private model: string = "gpt-oss:20b";
 
-  
+  // gpt-oss:20b
+  //ministral-3:14b
 
   async GetWorkFlowType(projectId: string, input: string): Promise<any> {
 
@@ -69,7 +70,6 @@ export class OllamaAdapter implements LLMAdapter {
 
     logger.info(`[${MODULE}] RESPONSE GENERATED`)
     const data = await response.json();
-    console.log(`[${MODULE}] RESPONSE: ${JSON.stringify(data.response)}`)  
     return data.response;
   }
 
@@ -107,7 +107,7 @@ export class OllamaAdapter implements LLMAdapter {
 
   async *generate(projectId: string, params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }> {
 
-    let thinking: string | boolean = true;
+    let thinking: string | boolean = false;
 
     if (this.model === "gpt-oss:20b") {
       thinking = "medium";
@@ -116,17 +116,25 @@ export class OllamaAdapter implements LLMAdapter {
     logger.info(`[${MODULE}] TOTAL SIZE of INPUT:${(params.systemPrompt).length + (params.userPrompt).length}`)
     logger.info(`[${MODULE}] Connecting with the model: ${this.model}`);
 
-    systemStatuses.set(projectId, { object: "", message: `CONNECTING TO ${this.model} model` });
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    let requestBody: any = {
         model: this.model,
         system: params.systemPrompt,
         prompt: params.userPrompt,
         stream: true,
-        think: thinking,
-      }),
+    }
+
+    if (this.model !== "ministral-3:14b") {
+      requestBody = {
+        ...requestBody,
+        think: thinking
+      };
+    }
+
+    systemStatuses.set(projectId, { object: "", message: `CONNECTING TO ${this.model} model` });
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.body) throw new Error('No response body');
@@ -134,7 +142,6 @@ export class OllamaAdapter implements LLMAdapter {
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
-    console.log(`STREAM RES: ${JSON.stringify(reader.read())}`)
 
     logger.info(`[${MODULE}] Streaming response...`);
     while (true) {
@@ -170,3 +177,180 @@ export class OllamaAdapter implements LLMAdapter {
     yield { res: null, done: true };
   }
 }
+
+// This implementation assumes that the Ollama API at /api/chat can handle both streaming and non-streaming requests, and that it returns data in the expected format. The generate method reads the response stream, decodes it, and yields chunks of data as they arrive, while also updating the system status based on whether the model is thinking or responding.
+// import { LLMAdapter } from "./llm-adapter.interface";
+// import { logger } from "../utils/logger";
+// import { systemStatuses } from "../api/project.controller";
+
+// const MODULE = "ollama.adapter.ts"
+
+// // Keep the same JSON schema for structured responses
+// const responseSchema = {
+//   type: 'object',
+//   properties: {
+//     res: { type: 'string' },
+//     actions: {
+//       type: 'array',
+//       items: {
+//         type: 'object',
+//         properties: {
+//           type: { type: 'string', enum: ['READ', 'WRITE', 'UPDATE', 'DELETE', 'SWITCH-AG'] },
+//           target: { type: 'string' },
+//           content: { type: 'string' }
+//         },
+//         required: ['type', 'target'],
+//         additionalProperties: false
+//       }
+//     }
+//   },
+//   required: ['res'],
+//   additionalProperties: false
+// };
+
+// export class OllamaAdapter implements LLMAdapter {
+//   private model: string = "gpt-oss:20b";
+
+//   async GetWorkFlowType(projectId: string, input: string): Promise<any> {
+//     let thinking: string | boolean = false;
+//     if (this.model === "gpt-oss:20b") {
+//       thinking = "low";
+//     }
+
+//     logger.info(`[${MODULE}] Fetching the project workflow type.`)
+
+//     const response = await fetch('http://localhost:11434/api/chat', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         model: this.model,
+//         messages: [
+//           { role: 'user', content: `Read this project context and return the type,\n\n${input}\n\nIf greenfield then STRICTLY return "greenfield.yaml" , if brownfield then STRICTLY return "brownfield.yaml"` }
+//         ],
+//         stream: false,
+//         think: thinking,
+//       }),
+//     });
+
+//     if (!response.ok) {
+//       logger.error(`[${MODULE}] Request failed: ${response.status}`)
+//       throw new Error(`Request failed: ${response.status}`);
+//     }
+
+//     logger.info(`[${MODULE}] RESPONSE GENERATED`)
+//     const data = await response.json();
+//     return data.message.content;
+//   }
+
+//   async executeAction(projectId: string, params: { systemPrompt: string; userPrompt: string }): Promise<any> {
+//     let thinking: string | boolean = true;
+//     if (this.model === "gpt-oss:20b") {
+//       thinking = "medium";
+//     }
+
+//     logger.info(`[${MODULE}] TOTAL SIZE of INPUT:${(params.systemPrompt).length + (params.userPrompt).length}`)
+//     logger.info(`[${MODULE}] Generating non-streaming response.`)
+
+//     const response = await fetch('http://localhost:11434/api/chat', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({
+//         model: this.model,
+//         messages: [
+//           { role: 'system', content: params.systemPrompt },
+//           { role: 'user', content: params.userPrompt }
+//         ],
+//         stream: false,
+//         think: thinking,
+//         format: responseSchema
+//       }),
+//     });
+
+//     if (!response.ok) {
+//       logger.error(`[${MODULE}] Request failed: ${response.status}`)
+//       throw new Error(`Request failed: ${response.status}`);
+//     }
+
+//     logger.info(`[${MODULE}] RESPONSE GENERATED`)
+//     const data = await response.json();
+//     return data.message.content;
+//   }
+
+//   async *generate(projectId: string, params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }> {
+//     let thinking: string | boolean = false;
+//     if (this.model === "gpt-oss:20b") {
+//       thinking = "medium";
+//     }
+
+//     logger.info(`[${MODULE}] TOTAL SIZE of INPUT:${(params.systemPrompt).length + (params.userPrompt).length}`)
+//     logger.info(`[${MODULE}] Connecting with the model: ${this.model}`);
+
+//     let requestBody: any = {
+//       model: this.model,
+//       messages: [
+//         { role: 'system', content: params.systemPrompt },
+//         { role: 'user', content: params.userPrompt }
+//       ],
+//       stream: true,
+//     };
+
+//     // Special case for models that don't support 'think'
+//     if (this.model !== "ministral-3:14b") {
+//       requestBody.think = thinking;
+//     }
+
+//     systemStatuses.set(projectId, { object: "", message: `CONNECTING TO ${this.model} model` });
+
+//     const response = await fetch('http://localhost:11434/api/chat', {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify(requestBody),
+//     });
+
+//     if (!response.body) throw new Error('No response body');
+//     const reader = response.body.getReader();
+//     const decoder = new TextDecoder('utf-8');
+//     let buffer = '';
+
+//     logger.info(`[${MODULE}] Streaming response...`);
+
+//     while (true) {
+//       const { done, value } = await reader.read();
+//       if (done) break;
+
+//       buffer += decoder.decode(value, { stream: true });
+
+//       const lines = buffer.split('\n');
+//       buffer = lines.pop() || ''; // keep last incomplete line
+
+//       for (const line of lines) {
+//         if (line.trim() === '') continue;
+//         try {
+//           const data = JSON.parse(line);
+
+//           // Chat streaming chunks contain 'message.content'
+//           const content = data.message?.content || null;
+//           const isDone = data.done === true;
+
+//           // Update status based on streaming content and thinking flag
+//           if (!isDone) {
+//             if (data.message?.thinking) {
+//               systemStatuses.set(projectId, { object: "LLM", message: 'THINKING' });
+//             } else if (content) {
+//               systemStatuses.set(projectId, { object: "LLM", message: 'RESPONDING' });
+//             }
+//           }
+
+//           yield { res: content, done: isDone };
+
+//           if (isDone) return;
+//         } catch (err) {
+//           logger.error(`[${MODULE}] Failed to parse chunk: ${line}`, err);
+//         }
+//       }
+//     }
+
+//     // If stream ends without a done flag, signal completion
+//     yield { res: null, done: true };
+//   }
+// }

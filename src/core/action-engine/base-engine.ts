@@ -97,7 +97,7 @@ export class BaseActionEngine {
     };
   }
 
-  private static resolveSafePath(projectId: string, relativePath: string): string {
+  public static resolveSafePath(projectId: string, relativePath: string): string {
     const projectPath = ProjectStateRepository.getProjectPath(projectId);
     const resolved = path.resolve(projectPath, relativePath);
     logger.debug(`[${MODULE}] Resolved path: ${resolved}`);

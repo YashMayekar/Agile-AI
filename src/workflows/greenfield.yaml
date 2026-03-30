@@ -95,7 +95,9 @@ steps:
       - prd.md
     template: 
       - prd-tmpl.md
-    notes: "Incorporate architecture feedback into PRD."
+    notes: |
+      This step is optional and only runs if the architect provided feedback that requires PRD changes.
+      Incorporate architecture feedback into PRD.
     next: [6]
 
   - id: 6

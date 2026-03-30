@@ -3,6 +3,7 @@ import { logger } from "../../utils/logger";
 import { Action, ActionHandler } from "./base-engine";
 import { ProjectStateRepository } from "../project-state/project-state.repository";
 import { OllamaAdapter } from "../../llm/ollama.adapter";
+import { GeminiAdapter } from "../../llm/gemini.adapter";
 
 const MODULE = "write.action.ts";
 
@@ -33,6 +34,7 @@ export class WriteHandler implements ActionHandler {
     if (safePath.includes("project-context.md")) {
       try {
         const llm = new OllamaAdapter();
+        // const llm = new GeminiAdapter();
         const detected = await llm.GetWorkFlowType(projectId, action.content);
         let workflowFile = "greenfield.yaml";
         console.log(`Detected workflow type: ${detected}`);
