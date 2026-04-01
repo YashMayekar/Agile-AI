@@ -141,7 +141,7 @@ ${this.skippedSYSactions
         let safePath = ""
 
         if (this.FileActions.includes(act.type)) {
-          
+
           const parsedPath = this.getPath(act.target);
           if (!parsedPath) {
             logger.warn(`[${MODULE}] Invalid target format: ${act.target}`);
@@ -157,7 +157,7 @@ ${this.skippedSYSactions
             this.cliActions.push(encodedAction);
             continue;
           }
-          
+
           safePath = this.resolveSafePath(projectId, parsedPath.path);
 
         } else {

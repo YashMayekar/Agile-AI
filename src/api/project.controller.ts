@@ -14,6 +14,47 @@ import { GeminiAdapter } from "../llm/gemini.adapter";
 const MODULE = "project.controller.ts";
 const router = express.Router();
 
+class StreamParser {
+  private buffer = "";
+  private state: 'SEEKING_RES' | 'WAITING_COLON' | 'INSIDE_RES' | 'DONE' = 'SEEKING_RES';
+  private escapeNext = false;
+
+  parse(chunk: string): string {
+    let output = "";
+    for (let i = 0; i < chunk.length; i++) {
+      const char = chunk[i];
+      if (this.state === 'SEEKING_RES') {
+        this.buffer += char;
+        if (this.buffer.endsWith('"res"')) {
+          this.state = 'WAITING_COLON';
+        }
+      } else if (this.state === 'WAITING_COLON') {
+        if (char === '"') {
+          this.state = 'INSIDE_RES';
+        }
+      } else if (this.state === 'INSIDE_RES') {
+        if (this.escapeNext) {
+          if (char === 'n') output += '\n';
+          else if (char === 'r') output += '\r';
+          else if (char === 't') output += '\t';
+          else if (char === 'b') output += '\b';
+          else if (char === 'f') output += '\f';
+          else output += char; // handles \", \\, \/
+          this.escapeNext = false;
+        } else if (char === '\\') {
+          this.escapeNext = true;
+        } else if (char === '"') {
+          this.state = 'DONE';
+        } else {
+          output += char;
+        }
+      }
+    }
+    return output;
+  }
+}
+
+
 // Cache to hold LLM instances per project
 interface SystemStatus {
   object: string;
@@ -153,9 +194,23 @@ router.post("/:projectId/m/s", async (req, res) => {
   try {
     // ---------- 1st response: direct user input ----------
     const stream1 = Orchestrator.handleUserInput(projectId, userInput, llm);
+    // let fullRawResponse1 = "";
+    // const parser1 = new StreamParser();
     for await (const chunk of stream1) {
-      writeChunk(chunk);
+      if (chunk.res) {
+        // fullRawRespon se1 += chunk.res;
+        // const parsedPart = parser1.parse(chunk.res);
+        // if (parsedPart) {
+        //   writeChunk({ res: parsedPart });
+        // }
+        writeChunk({ res: chunk.res });
+      } else if (chunk.done) {
+        // Handle done flag specifically if needed, otherwise rely on the loop end
+      } else {
+        writeChunk(chunk); // in case there's status or tools we want to forward
+      }
     }
+    // logger.warn(`[${MODULE}] FULL JSON RESPONSE:\n${fullRawResponse1}\n`);
     writeChunk({ done: true });   // end of first message
 
     // ---------- 2nd response: read results if any ----------
@@ -164,30 +219,69 @@ router.post("/:projectId/m/s", async (req, res) => {
       const readContext = BaseActionEngine.getAggregatedReadContext();
       const skipped = BaseActionEngine.getSkippedSteps();
       const input2 = `
-These are the results of READ requests provided by the SYSTEM from the previous response.
-${readContext}
-Skipped actions: ${skipped}
-See conversation history and respond accordingly.`;
+    These are the results of READ requests provided by the SYSTEM from the previous response.
+    ${readContext}
+    Skipped actions: ${skipped}
+    See conversation history and respond accordingly.`;
 
+      systemStatuses.set(projectId, { object: "", message: "READING File" });
       const stream2 = Orchestrator.handleUserInput(projectId, input2, llm);
+      // let fullRawResponse2 = "";
+      // const parser2 = new StreamParser();
       for await (const chunk of stream2) {
-        writeChunk(chunk);
+        if (chunk.res) {
+          // fullRawResponse2 += chunk.res;
+          // const parsedPart = parser2.parse(chunk.res);
+          // if (parsedPart) {
+          //   writeChunk({ res: parsedPart });
+          // }
+          writeChunk({ res: chunk.res });
+        } else if (!chunk.done) {
+          writeChunk(chunk);
+        }
       }
+      // logger.warn(`[${MODULE}] FULL JSON RESPONSE (READ RESULTS):\n${fullRawResponse2}\n`);
       writeChunk({ done: true });
       BaseActionEngine.ReadResults = [];   // clear after use
     }
 
 
     if (BaseActionEngine.sysResults.length && BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].type === "WRITE") {
+      logger.info(`[${MODULE}] WRITE ACTION ENCOUNTERED`);
       const input3 = `This is the file you just created. 
-      ${BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].target}
-      Now explain user the next steps.`;
-      
+\`\`\`
+${BaseActionEngine.sysResults[BaseActionEngine.sysResults.length - 1].target}
+\`\`\`
+If any file remaining to be created then continue creating files.
+If all the files in the current step is created then move to next step by responding:
+{
+    "res": "Moving to next step.",
+    "actions": [
+        {
+            "type": "WORKFLOW",
+            "target": "NEXT-STEP"
+        }
+    ]
+}
+`;
+
       const stream3 = Orchestrator.handleUserInput(projectId, input3, llm);
+      // let fullRawResponse3 = "";
+      // const parser3 = new StreamParser();
       for await (const chunk of stream3) {
-        writeChunk(chunk);
+        if (chunk.res) {
+          // fullRawResponse3 += chunk.res;
+          // const parsedPart = parser3.parse(chunk.res);
+          // if (parsedPart) {
+          //   writeChunk({ res: parsedPart });
+          // }
+          writeChunk({ res: chunk.res });
+        } else if (!chunk.done) {
+          writeChunk(chunk);
+        }
       }
-      writeChunk({ done: true });  
+      // logger.warn(`[${MODULE}] FULL JSON RESPONSE (WRITE ACTIONS):\n${fullRawResponse3}\n`);
+      writeChunk({ done: true });
     }
 
     // ---------- 3rd response: workflow greeting if needed ----------
@@ -198,12 +292,24 @@ See conversation history and respond accordingly.`;
       if (FileSystem.exists(projectContextPath)) {
         projectContext = `Project context:\n${fs.readFileSync(projectContextPath, "utf-8")}`;
       }
-      const input3 = `${projectContext}\n\nGreet the user and introduce yourself in short, explaining what you will do now.`;
+      const input3 = `${projectContext}\n\nIntroduce yourself and explain the current steps and what you will do.`;
 
-      const stream3 = Orchestrator.handleUserInput(projectId, input3, llm);
-      for await (const chunk of stream3) {
-        writeChunk(chunk);
+      const stream4 = Orchestrator.handleUserInput(projectId, input3, llm);
+      // let fullRawResponse4 = "";
+      // const parser4 = new StreamParser();
+      for await (const chunk of stream4) {
+        if (chunk.res) {
+          // fullRawResponse4 += chunk.res;
+          // const parsedPart = parser4.parse(chunk.res);
+          // if (parsedPart) {
+          //   writeChunk({ res: parsedPart });
+          // }
+          writeChunk({ res: chunk.res });
+        } else if (!chunk.done) {
+          writeChunk(chunk);
+        }
       }
+      // logger.warn(`[${MODULE}] FULL JSON RESPONSE (WORKFLOW GREETING):\n${fullRawResponse4}\n`);
       writeChunk({ done: true });
     }
     BaseActionEngine.sysResults.push({ type: "NONE", target: "", content: "" });

@@ -698,12 +698,7 @@ Based on enhancement requirements, these files will be affected:
 
 - Always suggest next logical step
 - Use SWITCH-AG when needed
-- Do NOT implement or code
-- Focus strictly on analysis and strategy
-
 ---
 
 This agent must produce structured, high-quality analytical outputs and always respond in the defined JSON format.
-
-
 ```

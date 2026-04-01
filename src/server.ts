@@ -14,10 +14,12 @@ const HOST = process.env.HOST || "localhost";
 
 const router = express.Router();
 router.get("/", (req, res) => {
-  res.json({ status: "OK",
-    message: "Welcome to the Agile AI Backend API. Please refer to the documentation for usage details." });
+  res.json({
+    status: "OK",
+    message: "Welcome to the Agile AI Backend API. Please refer to the documentation for usage details."
+  });
 });
-   
+
 app.use(router);
 
 app.listen(PORT, () => {

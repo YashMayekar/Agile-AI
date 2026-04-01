@@ -8,9 +8,8 @@ import winston from "winston";
 
 // Custom timestamp format for console (HH:MM:SS)
 const consoleTimestampFormat = winston.format.printf(({ level, message, timestamp, ...metadata }) => {
-  console.log(`${timestamp} ${level.toUpperCase()}`);
-    let logMessage = `${message}`;
-    // If there's metadata (like event objects), format it nicely
+  let logMessage = `${message}`;
+  // If there's metadata (like event objects), format it nicely
   if (Object.keys(metadata).length > 0) {
     // Remove internal winston properties
     const cleanMetadata = { ...metadata };
@@ -21,15 +20,15 @@ const consoleTimestampFormat = winston.format.printf(({ level, message, timestam
       logMessage += ` ${JSON.stringify(cleanMetadata)}`;
     }
   }
-  
-  return `${timestamp} ${level} ${logMessage}\n`;
+
+  return `${timestamp} ${level} ${logMessage}`;
 });
 
 export const logger = winston.createLogger({
   level: "debug",
   transports: [
     // File transport - JSON format for structured logging
-    new winston.transports.File({ 
+    new winston.transports.File({
       filename: "/system.log",
       level: "info",
       format: winston.format.combine(
@@ -37,7 +36,7 @@ export const logger = winston.createLogger({
         winston.format.json()
       )
     }),
-    
+
     // Console transport - Human readable format
     new winston.transports.Console({
       format: winston.format.combine(
@@ -59,10 +58,10 @@ export function logEvent(event: string, data?: any) {
     event,
     ...data
   };
-  
+
   // Create a readable message for console
   const consoleMessage = `${event}${data ? ` ${JSON.stringify(data)}` : ''}`;
-  
+
   // For file logging, use the structured format
-//   logger.info(consoleMessage, logData);  
+  //   logger.info(consoleMessage, logData);  
 }

@@ -4,6 +4,7 @@ import { Action, ActionHandler } from "./base-engine";
 import { ProjectStateRepository } from "../project-state/project-state.repository";
 import { OllamaAdapter } from "../../llm/ollama.adapter";
 import { GeminiAdapter } from "../../llm/gemini.adapter";
+import { systemStatuses } from "../../api/project.controller";
 
 const MODULE = "write.action.ts";
 
@@ -22,9 +23,11 @@ export class WriteHandler implements ActionHandler {
 
     try {
       fs.writeFileSync(safePath, action.content);
+      systemStatuses.set(projectId, { object: "", message: "WRITE_SUCCESS: " + safePath });
     } catch (e: any) {
       logger.error(`[${MODULE}] Failed to write file ${safePath}: ${e?.message || e}`);
       context.sysResults.push({ type: "WRITE", target: action.target, content: "WRITE_ERROR" });
+      systemStatuses.set(projectId, { object: "", message: "WRITE_ERROR: " + e?.message || e });
       return;
     }
 

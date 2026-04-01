@@ -55,13 +55,15 @@ export class GeminiAdapter implements LLMAdapter {
     return response;
   }
 
-  async executeAction(projectId: string, params: { systemPrompt: string; userPrompt: string }): Promise<any> {
-  logger.info(`[${MODULE}] TOTAL SIZE of INPUT: ${(params.systemPrompt).length + (params.userPrompt).length}`);
-  logger.info(`[${MODULE}] Generating non-streaming response.`);
+  async executeAction(projectId: string, params: { systemPrompt: string; userPrompt: string, dynamicContext?: string, history?: {role: string, content: string}[] }): Promise<any> {
+    logger.info(`[${MODULE}] TOTAL SIZE of INPUT: ${(params.systemPrompt).length + (params.userPrompt).length}`);
+    logger.info(`[${MODULE}] Generating non-streaming response.`);
 
-  const fullPrompt = `${params.systemPrompt}\n\n${params.userPrompt}`;
+    const historyText = params.history ? params.history.map(h => `${h.role}: ${h.content}`).join("\n\n") : "";
+    const dynamicText = params.dynamicContext ? `[CURRENT SYSTEM STATE & INSTRUCTIONS]\n${params.dynamicContext}\n\n` : "";
+    const fullPrompt = `${params.systemPrompt}\n\n${historyText}\n\n${dynamicText}User: ${params.userPrompt}`;
 
-  // Cast to any to bypass strict type checking for the schema
+    // Cast to any to bypass strict type checking for the schema
   const generationConfig: any = {
     responseMimeType: "application/json",
     responseSchema: responseSchema,
@@ -85,11 +87,13 @@ export class GeminiAdapter implements LLMAdapter {
   }
 }
 
-  async *generate(projectId: string, params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }> {
+  async *generate(projectId: string, params: { systemPrompt: string; userPrompt: string, dynamicContext?: string, history?: {role: string, content: string}[] }): AsyncGenerator<{ res: string | null; tools?: any; done: boolean }> {
     logger.info(`[${MODULE}] TOTAL SIZE of INPUT: ${(params.systemPrompt).length + (params.userPrompt).length}`);
     logger.info(`[${MODULE}] Connecting with the model: ${this.modelName}`);
 
-    const fullPrompt = `${params.systemPrompt}\n\n${params.userPrompt}`;
+    const historyText = params.history ? params.history.map(h => `${h.role}: ${h.content}`).join("\n\n") : "";
+    const dynamicText = params.dynamicContext ? `[CURRENT SYSTEM STATE & INSTRUCTIONS]\n${params.dynamicContext}\n\n` : "";
+    const fullPrompt = `${params.systemPrompt}\n\n${historyText}\n\n${dynamicText}User: ${params.userPrompt}`;
 
     systemStatuses.set(projectId, { object: "", message: `CONNECTING TO ${this.modelName} model` });
 

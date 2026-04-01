@@ -20,6 +20,6 @@ export interface LLMResponse {
 }
 
 export interface LLMAdapter {
-  generate(projectId: string, params: { systemPrompt: string; userPrompt: string }): AsyncGenerator<{ res: string | null; done: boolean }>;
-  executeAction(projectId: string, params: { systemPrompt: string; userPrompt: string }): Promise<any>;
+  generate(projectId: string, params: { systemPrompt: string; userPrompt: string, dynamicContext?: string, history?: {role: string, content: string}[] }): AsyncGenerator<{ res: string | null; tools?: any; done: boolean }>;
+  executeAction(projectId: string, params: { systemPrompt: string; userPrompt: string, dynamicContext?: string, history?: {role: string, content: string}[] }): Promise<any>;
 }

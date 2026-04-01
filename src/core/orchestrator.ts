@@ -9,6 +9,7 @@ import { systemStatuses } from "../api/project.controller";
 import { StateManager } from "./state-manager";
 import fs from "fs";
 import { GeminiAdapter } from "../llm/gemini.adapter";
+import { IntentAnalyzer } from "./intent-analyzer";
 
 const MODULE = "orchestrator.ts";
 
@@ -27,7 +28,9 @@ export class Orchestrator {
     projectId: string,
     userInput: string,
     llm?: OllamaAdapter | GeminiAdapter,
-  ): AsyncGenerator<{ res: string | null; done: boolean }, any, unknown> {
+    isAutoTrigger: boolean = false,
+    depth: number = 0
+  ): AsyncGenerator<{ res: string | null; tools?: any; done: boolean }, any, unknown> {
 
     ExecutionLock.acquire(projectId);
     logger.info(`[${MODULE}] EXECUTION LOCK ENABLE - Processing input`)
@@ -36,8 +39,6 @@ export class Orchestrator {
     let fullResponse: string = "";
     let currentWorkflow: WorkflowStep | null = null;
     let agent: string = "orchestrator";
-    
-    
     let currentStepID = Number(StateManager.load(projectId).currentStepId) || 0;
     let workflowFile = StateManager.load(projectId).workflowFile || "greenfield.yaml";
 
@@ -64,14 +65,14 @@ export class Orchestrator {
       if (currentWorkflow?.requires) {
         for (const file of currentWorkflow.requires) {
           const safePath = BaseActionEngine.resolveSafePath(projectId, `docs/${file}`);
-          if (!fs.existsSync(safePath)) { 
-            logger.warn(`[${MODULE}] Required file not found: ${file}\nExpected at path: ${safePath}`);  
+          if (!fs.existsSync(safePath)) {
+            logger.warn(`[${MODULE}] Required file not found: ${file}\nExpected at path: ${safePath}`);
             requiredFiles += `- ${file}\n`;
           }
         }
-      missingFilesPrompt = requiredFiles ? `In the SYSTEM, The following required files are missing:\n${requiredFiles}\nACKNOWLEDGE the current input but ask user the INFORMATION NEEDED TO CREATE THEM.` : "";
+        missingFilesPrompt = requiredFiles ? `MISSING REQUIRED FILES: The following files needed to be created FIRST in this step:\n${requiredFiles}` : "ALL REQUIRED FILES ARE PRESENT.";
       }
-      
+
     } catch (e) {
       logger.error(`[${MODULE}] Error in loading ${agent} prompt: ${e}`)
     }
@@ -87,31 +88,78 @@ export class Orchestrator {
         logger.error(`[${MODULE}] Failed to build context: ${e}`)
       }
 
+      const CLITree = await ContextBuilder.getClientFS(projectId)
 
-      this.FullPrompt = `
-HERE is the CLIENT SIDE FILE STRUCTURE, if you need to perform actions on client side:
+      let clientData = ""
+      if (CLITree) {
+        clientData = `
+# HERE is the CLIENT SIDE FILE STRUCTURE, if you need to perform actions on client side:
 \`\`\`
-${await ContextBuilder.getClientFS(projectId)}
+${CLITree}
 \`\`\`
-Here the paths with no extension '.' are just empty folders
-
-${missingFilesPrompt}
-
-only in this format\n${ContextBuilder.response_structure}
-
-Here is the latest few conversation:
-${MemoryManager.getLastNConversations(projectId, 3)}
-
-Understand the,
-*PROJECT CONTEXT*
-*CONVERSATION HISTORY*
-repond to the User's Input in the CORRECT FORMAT:
-***${userInput}***
+# Here the paths with no extension '.' are just empty folders
+IF You want to acces or write in the client side, proide target path as CLI:<folder>/<filename>.extension
 `
 
+      }
 
-      console.log(`FULL CONTEXT:\n${this.context.slice(0, 100)}\n\nFULL PROMPT:\n${this.FullPrompt.slice(-100)}`)
-      systemStatuses.set(projectId, { object: "LLM", message: "THINKING" });
+      let systemData = ``
+
+      // This part fetches the files generated in the projectid/docs
+      try {
+        const docsPath = BaseActionEngine.resolveSafePath(projectId, "docs");
+        if (fs.existsSync(docsPath)) {
+          const files = fs.readdirSync(docsPath);
+          if (files.length > 0) {
+            systemData = `
+# Here are the files generated in the system at the path ${projectId}/docs:
+\`\`\`
+${files.join("\n")}
+\`\`\`
+Before generating or reading files in the system check if its present in the above list.
+`}
+        }
+      } catch (e) {
+        logger.error(`[${MODULE}] Error in loading system data: ${e}`)
+      }
+
+      // NEW INTENT PRE-PROCESSING -------------
+      // let preActions: Action[] = [];
+      // let contextInjection = "";
+
+      // if (!isAutoTrigger) {
+      //   systemStatuses.set(projectId, { object: "INTENT", message: "ANALYZING..." });
+      //   preActions = await IntentAnalyzer.analyze(userInput, CLITree || "");
+      // }
+
+      // if (preActions && preActions.length > 0) {
+      //   systemStatuses.set(projectId, { object: "INTENT", message: "FETCHING CONTEXT" });
+      //   await BaseActionEngine.executeActions(projectId, preActions);
+
+      //   // Extract results
+      //   const readResults = BaseActionEngine.getAggregatedReadContext();
+      //   if (readResults) {
+      //     contextInjection = `\n# PRE-FETCHED CONTEXT (Files requested during intent phase):\n${readResults}\n`;
+      //   }
+      // }
+      // ---------------------------------------
+
+      const structuredHistory = MemoryManager.getLastNConversationsStructured(projectId, 2);
+
+      this.FullPrompt = `
+${clientData}
+
+${systemData}
+
+This is your conversation history with the user:
+${JSON.stringify(structuredHistory)}
+
+Follow this response structure:
+${ContextBuilder.response_structure}
+
+Now respond to the user's message: 
+**${userInput}**`;
+      // create a full-input.txt file with the current full input to the LLM.
       const stream = llmInstance.generate(
         projectId,
         {
@@ -123,20 +171,32 @@ repond to the User's Input in the CORRECT FORMAT:
       for await (const chunk of stream) {
         yield chunk;
         if (chunk.res) {
+
           fullResponse += chunk.res;
         }
       }
+
       await Promise.resolve(MemoryManager.addConversation(projectId, userInput, fullResponse, agent));
 
-      console.log(`FULL RESPONSE:\n${fullResponse}`)
       let actions: Action[] | null
       actions = BaseActionEngine.getActions(fullResponse)
-      await BaseActionEngine.executeActions(projectId, actions)
+      const executionResult = await BaseActionEngine.executeActions(projectId, actions)
 
       systemStatuses.set(projectId, { object: "ORCHESTRATOR", message: "IDLE" });
 
 
       logger.info(`[${MODULE}] PROCESSING COMPLETED`);
+
+      // if (executionResult && executionResult.sysResults) {
+      //   const workflowSuccess = executionResult.sysResults.find(r => r.type === 'WORKFLOW' && r.content === 'SUCCESS');
+      //   if (workflowSuccess && depth < 5) {
+      //     logger.info(`[${MODULE}] AUTO-TRIGGERING NEXT AGENT DUE TO WORKFLOW SUCCESS at depth ${depth}`);
+      //     const triggerMsg = "[SYSTEM AUTO-TRIGGER]: Workflow advanced successfully. Your role and step may have changed. Please read the history, introduce yourself, state the goal of your new step, and begin the GATHER PHASE by asking the user the necessary questions.";
+      //     for await (const chunk of Orchestrator.handleUserInput(projectId, triggerMsg, llmInstance, true, depth + 1)) {
+      //       yield chunk;
+      //     }
+      //   }
+      // }
     } catch (error: any) {
       logger.error(`[${MODULE}] Processing failed: ${error.message}`);
       yield { res: `Error: ${error.message}`, done: true };

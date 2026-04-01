@@ -28,7 +28,7 @@ steps:
       Greet User and gather initial information.
       Confirm project details before proceeding.
       Show the user what are the next steps they can consider.
-    next: [1,2,3,4]
+    next: [1]
 
   - id: 1
     prev: [0]

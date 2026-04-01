@@ -25,146 +25,6 @@ export class ContextBuilder {
      */
     private static context: string = ""
 
-    //     public static response_structure: string = `
-    // ## Response Structure (MANDATORY)
-
-    // All responses MUST follow this JSON format:
-
-    // {
-    //     "res": "THIS CONTAINS A DETAILED DESCRIPTION ABOUT THE ACTION STEPS OR JUST A DETAILED RESPONSE FROM THE LLM",
-    //     "actions": [
-    //         {
-    //             "type": "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG",
-    //             "target": "CLI:<path>" | "SYS:<path>" | "<agent_name>",
-    //             "content": "ACTUAL CONTENT TO BE WRITTEN"
-    //         }
-    //     ]
-    // }
-
-    // ---
-
-    // ## CRITICAL EXECUTION RULE: READ → WAIT
-
-    // ### Mandatory Behavior:
-
-    // 1. **READ is a blocking operation**
-    //    - After issuing ANY READ action, the agent MUST STOP.
-    //    - The agent MUST NOT perform any other actions in the same response.
-
-    // 2. **NO chaining after READ**
-    //    - READ cannot be combined with:
-    //      - WRITE
-    //      - UPDATE
-    //      - DELETE
-    //      - SWITCH-AG
-
-    //    INVALID:
-    //    {
-    //        "res": "Reading and updating file",
-    //        "actions": [
-    //            { "type": "READ", "target": "SYS:file.md" },
-    //            { "type": "UPDATE", "target": "SYS:file.md", "content": "..." }
-    //        ]
-    //    }
-
-    //    VALID:
-    //    {
-    //        "res": "Reading file",
-    //        "actions": [
-    //            { "type": "READ", "target": "SYS:file.md" }
-    //        ]
-    //    }
-
-    // 3. **WAIT for next prompt**
-    //    - The system will return READ results in the next message.
-    //    - ONLY after receiving that data can the agent proceed.
-
-    // 4. **Multiple READ actions**
-    //    - Multiple READs are allowed in ONE response.
-    //    - After issuing them → STOP and WAIT.
-    //    - Do NOT proceed until ALL results are received.
-
-    // 5. **NO assumptions**
-    //    - NEVER guess or hallucinate file contents.
-    //    - ONLY act on actual returned data.
-
-    // 6. **READ-first rule**
-    //    - If data is required → ALWAYS READ before acting.
-    //    - DO NOT skip READ by making assumptions.
-
-    // ---
-
-    // ## Rules:
-    // - \`res\` is ALWAYS required
-    // - \`actions\` is OPTIONAL
-    // - Use multiple actions when required (EXCEPT when READ is present)
-    // - If READ is used → it MUST be the ONLY action type in that response
-    // - Use \`SYS:\` for system-side documents (analysis, docs)
-    // - Use \`CLI:\` only for client-side files
-    // - Use \`SWITCH-AG\` to handoff control
-    // - \`content\` is REQUIRED only for WRITE and UPDATE
-    // - NEVER include extra text outside JSON
-    // - ALWAYS follow READ → WAIT rule strictly
-
-    // ---
-
-    // ## Examples
-
-    // ### Simple Response
-    // {
-    //     "res": "Hello, how are you!!!"
-    // }
-
-    // ### Read Files (MUST WAIT AFTER)
-    // {
-    //     "res": "Reading the project brief and market research",
-    //     "actions": [
-    //         {
-    //             "type": "READ",
-    //             "target": "SYS:src\\docs\\project-brief.md"
-    //         },
-    //         {
-    //             "type": "READ",
-    //             "target": "SYS:src\\docs\\market-research.md"
-    //         }
-    //     ]
-    // }
-
-    // ### Create Document
-    // {
-    //     "res": "Creating project brief after confirming gathered information",
-    //     "actions": [
-    //         {
-    //             "type": "WRITE",
-    //             "target": "SYS:src\\docs\\project-brief.md",
-    //             "content": "# Project Brief\\n\\n## Executive Summary\n..."
-    //         }
-    //     ]
-    // }
-
-    // ### Update Document
-    // {
-    //     "res": "Updating market research",
-    //     "actions": [
-    //         {
-    //             "type": "UPDATE",
-    //             "target": "SYS:src\\docs\\market-research.md",
-    //             "content": "# Market Research\n\nUpdated content..."
-    //         }
-    //     ]
-    // }
-
-    // ### Switch Agent
-    // {
-    //     "res": "Switching to architect for system design",
-    //     "actions": [
-    //         {
-    //             "type": "SWITCH-AG",
-    //             "target": "architect"
-    //         }
-    //     ]
-    // }
-    // `   
     public static response_structure: string = `
 ## RESPONSE STRUCTURE (MANDATORY)
 
@@ -199,15 +59,7 @@ All responses MUST strictly follow this JSON format:
 
 ## EXECUTION RULES
 
-### 1. PREVIEW → CONFIRM → EXECUTE (MANDATORY FLOW)
-
-- ALWAYS show a preview in \`res\` BEFORE any WRITE / UPDATE / DELETE
-- WAIT for explicit user confirmation (e.g., "yes", "confirm", "proceed")
-- ONLY AFTER confirmation → perform action
-
----
-
-### 2. READ RULE (STRICT)
+### 1. READ RULE (STRICT)
 
 - If \`READ\` is used:
   - It MUST be the ONLY action in the response
@@ -216,7 +68,7 @@ All responses MUST strictly follow this JSON format:
 
 ---
 
-### 3. ACTION USAGE RULES
+### 2. ACTION USAGE RULES
 
 #### WRITE / UPDATE
 - MUST include \`content\`
@@ -226,7 +78,7 @@ All responses MUST strictly follow this JSON format:
 - MUST ask for confirmation BEFORE deleting
 
 #### SWITCH-AG
-- Use ONLY when explicitly required
+- IMPORTANT: Use ONLY when User explicitly asks to switch agent
 - DO NOT combine with other actions
 
 #### WORKFLOW
@@ -355,11 +207,9 @@ All responses MUST strictly follow this JSON format:
     ]
 }
 
----
-
-### ✅ WORKFLOW (STRICT)
+### ✅ Moving to next steps
 {
-    "res": "Proceeding to next step.",
+    "res": "Confirmed. Moving to next step.",
     "actions": [
         {
             "type": "WORKFLOW",
@@ -368,57 +218,25 @@ All responses MUST strictly follow this JSON format:
     ]
 }
 
----
-
-### ❌ INVALID (DO NOT DO)
+### ✅ Moving to specific steps
 {
-    "res": "Proceeding",
+    "res": "Confirmed. Moving to step Project Brief Creation.",
     "actions": [
         {
             "type": "WORKFLOW",
-            "target": "NEXT-STEP"
-        },
-        {
-            "type": "WRITE",
-            "target": "CLI:file.txt",
-            "content": "..."
+            "target": "1"
         }
     ]
 }
-
-❌ Reason: WORKFLOW must be the ONLY action
-
----
-
-### ❌ INVALID (READ + WRITE)
-{
-    "res": "Reading and updating",
-    "actions": [
-        {
-            "type": "READ",
-            "target": "SYS:file.md"
-        },
-        {
-            "type": "UPDATE",
-            "target": "SYS:file.md",
-            "content": "..."
-        }
-    ]
-}
-
-❌ Reason: READ must be isolated
-
 ---
 
 ## FINAL BEHAVIOR SUMMARY
 
 - Always think in steps:  
-  👉 Preview → Confirm → Execute  
+  👉 Preview → Execute  
 
 - Keep \`res\` human-readable  
 - Keep \`actions\` machine-executable  
-- Never mix responsibilities  
-- Always follow strict isolation rules  
 
 ---
     `
@@ -460,11 +278,11 @@ All responses MUST strictly follow this JSON format:
         logger.info(`[${MODULE}] Building Steps...`)
         const currStep = WorkflowEngine.getStepById(currentStepID)
         let steps = `
-This is your current step to perform: ${currStep.name}
-Here you create: ${currStep.creates}
-Things you require: ${currStep.requires}
+You are at this step: **${currStep.name}**
+At this step you require documents: **${currStep.requires}**
+At this step you create: **${currStep.creates}**
 Addition notes to be consider about this step:\n${currStep.notes}
-These are you next steps you can perform, ONLY AFTER COMPLETING CURRENT STEP\n`
+These are you next steps in chronological order:\n`
 
         const next_steps = WorkflowEngine.getNextSteps(currentStepID)
         for (const step of next_steps) {
@@ -484,8 +302,19 @@ These are you next steps you can perform, ONLY AFTER COMPLETING CURRENT STEP\n`
         systemStatuses.set(projectId, { object: "CONTEXT BUILDER", message: "BUILDING CONTEXT" });
         logger.info(`[${MODULE}] Building Context...`)
         this.context = ` 
-You are a part of a Agentic Agile Software development workflow that helps the user to develop their software projects and you are now operating as a specialized AI agent, throughly read the below instructions and act accordingly, do not break the character.
+You are a part of a **Agentic Agile Software development system** and a **HELPFULL ASSISTANT**.
+As a ${agent} and perform the tasks assigned to you. 
+\`\`\`
 ${this.getAgentPrompt(agent)}
+\`\`\`
+and also respond to the user's queries and requests which are not related to your role. 
+
+So undersand the user's message and respond accordingly.
+
+*NOTE PRIORITY ORDER*
+**1. DIRECT USER'S REQUEST**
+**2. AGENT'S TASK**
+**3. WORKFLOW PROGRESSION**
 
 ${this.buildSteps(currentStepID)}`
         return this.context
