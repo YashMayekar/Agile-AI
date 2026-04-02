@@ -8,14 +8,24 @@ let serverPort: number | null = null;
 
 // Map to store projectId per panel
 const panelToProjectId = new Map<vscode.WebviewPanel, string>();
+// Reverse map to quickly find an existing panel for a projectId
+let projectIdToPanel = new Map<string, vscode.WebviewPanel>();
 let globalContext: vscode.ExtensionContext;
 
-async function handleMessage(text: string, projectId: string, panel: vscode.WebviewPanel) {
+// Helper to clean up maps when a panel is disposed
+function setupPanelDisposal(panel: vscode.WebviewPanel, projectId: string) {
+  panel.onDidDispose(() => {
+    panelToProjectId.delete(panel);
+    projectIdToPanel.delete(projectId);
+  });
+}
+
+async function handleMessage(text: string, planning: boolean, projectId: string, panel: vscode.WebviewPanel) {
   try {
     const response = await fetch(`http://localhost:4000/api/project/${projectId}/m/s`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userInput: text }),
+      body: JSON.stringify({ userInput: text, planning }),
     });
 
     if (!response.ok || !response.body) {
@@ -26,6 +36,7 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
     const decoder = new TextDecoder();
     let buffer = '';
     let accumulatedMessage = '';
+    let accumulatedThought = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -61,9 +72,17 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
           // 3. Handle message content (chunks)
           if (chunk.res !== null && chunk.res !== undefined) {
             accumulatedMessage += chunk.res;
+          }
+          
+          if (chunk.think !== null && chunk.think !== undefined) {
+            accumulatedThought += chunk.think;
+          }
+
+          if (chunk.res || chunk.think) {
             panel.webview.postMessage({
               type: 'botChunk',
-              chunk: chunk.res
+              chunk: chunk.res || '',
+              thoughtChunk: chunk.think || ''
             });
           }
 
@@ -72,11 +91,13 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
             panel.webview.postMessage({
               type: 'botMessage',
               message: accumulatedMessage,
+              thought: accumulatedThought,
               done: true,
               actions: []
             });
             // Reset for the next bunch if any
             accumulatedMessage = '';
+            accumulatedThought = '';
           }
         } catch (err) {
           console.error('Failed to parse chunk:', line, err);
@@ -104,6 +125,9 @@ async function handleMessage(text: string, projectId: string, panel: vscode.Webv
 
 export function activate(context: vscode.ExtensionContext) {
   globalContext = context;
+  // Initialize the map fresh (in case of reload)
+  projectIdToPanel = new Map<string, vscode.WebviewPanel>();
+
   const sidebarProvider = new ChatSidebarProvider(context);
 
   context.subscriptions.push(
@@ -124,6 +148,10 @@ export function activate(context: vscode.ExtensionContext) {
         // Create panel with a temporary title
         const tempProjectId = "loading...";
         const panel = createChatPanel(context.extensionUri, tempProjectId);
+        panel.title = `Chat (initializing)`;
+        panelToProjectId.set(panel, tempProjectId);
+        projectIdToPanel.set(tempProjectId, panel);
+        setupPanelDisposal(panel, tempProjectId); // will be updated later
 
         // Show loading indicator
         panel.webview.postMessage({
@@ -165,9 +193,15 @@ export function activate(context: vscode.ExtensionContext) {
           }
         );
 
-        // Update panel title and map
+        // Update panel title and maps with the real projectId
         panel.title = `Chat ${projectId.slice(0, 4)}`;
         panelToProjectId.set(panel, projectId);
+        projectIdToPanel.delete(tempProjectId);
+        projectIdToPanel.set(projectId, panel);
+        // Re-setup disposal with the correct projectId (the previous one used temp)
+        // We'll just set a new disposal – the old one will still be attached but harmless.
+        // To avoid duplicates, we could remove the old listener, but it's fine.
+        setupPanelDisposal(panel, projectId);
 
         // Save chat session
         const savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
@@ -175,13 +209,9 @@ export function activate(context: vscode.ExtensionContext) {
         context.workspaceState.update('savedChats', savedChats);
         sidebarProvider.refresh();
 
-        panel.onDidDispose(() => {
-          panelToProjectId.delete(panel);
-        });
-
         // Send initial greeting message to the LLM
         try {
-          await handleMessage("greet the user and explain about how you can help him", projectId, panel);
+          await handleMessage("Hello", true, projectId, panel);
         } catch (err) {
           console.error('Failed to send greeting:', err);
           panel.webview.postMessage({
@@ -211,13 +241,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('chat.openChat', async (projectId: string) => {
       try {
+        // Check if a panel for this projectId already exists
+        let panel = projectIdToPanel.get(projectId);
+        if (panel && panelToProjectId.get(panel) === projectId) {
+          // Just reveal the existing panel
+          panel.reveal(vscode.ViewColumn.One);
+          return;
+        }
+
         const savedChats = context.workspaceState.get<{ id: string, title: string }[]>('savedChats', []);
         const chatInfo = savedChats.find(c => c.id === projectId);
         const title = chatInfo ? chatInfo.title : `Chat ${projectId.slice(0, 4)}`;
 
-        const panel = createChatPanel(context.extensionUri, projectId);
+        panel = createChatPanel(context.extensionUri, projectId);
         panel.title = title;
         panelToProjectId.set(panel, projectId);
+        projectIdToPanel.set(projectId, panel);
+        setupPanelDisposal(panel, projectId);
 
         panel.webview.postMessage({
           type: 'addMessage',
@@ -271,10 +311,6 @@ export function activate(context: vscode.ExtensionContext) {
           });
         }
 
-        panel.onDidDispose(() => {
-          panelToProjectId.delete(panel);
-        });
-
       } catch (err) {
         vscode.window.showErrorMessage("Failed to open chat");
         console.error(err);
@@ -303,7 +339,6 @@ export function activate(context: vscode.ExtensionContext) {
         console.error("Failed to delete chat from backend", err);
       }
 
-      // Optionally notify the user
       vscode.window.showInformationMessage("Chat deleted from sidebar");
     })
   );
@@ -433,7 +468,10 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
     'chatPanel',
     `Chat ${projectId.slice(0, 6)}`,
     vscode.ViewColumn.One,
-    { enableScripts: true }
+    { 
+      enableScripts: true,
+      retainContextWhenHidden: true  // 🟢 Critical: keep webview state when hidden
+    }
   );
 
   const htmlPath = vscode.Uri.joinPath(extensionUri, "media", "chatbot.html");
@@ -453,7 +491,7 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
         });
         return;
       }
-      await handleMessage(msg.text, realProjectId, panel);
+      await handleMessage(msg.text, msg.planning === true, realProjectId, panel);
     }
   });
 
