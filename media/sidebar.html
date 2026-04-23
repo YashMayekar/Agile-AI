@@ -2,54 +2,333 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
-  body { 
-    color: white; 
-    background-color: #1e1e1e; 
-    padding: 1rem; 
-    font-family: sans-serif;
-    margin: 0;
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@350;450;550;600&display=swap');
+  
+  :root {
+    --bg-primary: #13131a;
+    --bg-secondary: #1a1a23;
+    --bg-elevated: #252530;
+    --bg-hover: #2a2a38;
+    --accent-primary: #7c5cff;
+    --accent-secondary: #a78bfa;
+    --accent-glow: rgba(124, 92, 255, 0.3);
+    --text-primary: #fafaf9;
+    --text-secondary: #a8a29e;
+    --text-muted: #78716c;
+    --border-default: rgba(124, 92, 255, 0.15);
+    --border-subtle: rgba(124, 92, 255, 0.08);
+    --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body { 
+    color: var(--text-primary); 
+    background: var(--bg-primary); 
+    padding: 20px 16px; 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    margin: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header Section */
+  .sidebar-header {
+    margin-bottom: 24px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 0 4px;
+  }
+
+  .brand-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #7c5cff 0%, #a78bfa 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 650;
+    font-size: 1.1rem;
+    box-shadow: 0 0 16px rgba(124, 92, 255, 0.3);
+  }
+
+  .brand-text {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  /* Button Styles */
   button { 
-    background: #7c5cff; 
+    background: linear-gradient(135deg, #7c5cff 0%, #8b5cf6 100%); 
     width: 100%; 
     border: none; 
-    padding: 0.5rem 1rem; 
-    border-radius: 5px; 
+    padding: 12px 16px; 
+    border-radius: 12px; 
     color: white; 
     cursor: pointer; 
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 16px rgba(124, 92, 255, 0.25), 
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
   }
-  .chat-list {
-    margin-top: 10px;
+
+  button:hover { 
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(124, 92, 255, 0.4), 
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
-  .chat-item {
-    padding: 8px 12px;
-    margin: 4px 0;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    cursor: pointer;
-    border-left: 3px solid #7c5cff;
+
+  button:active {
+    transform: translateY(0);
   }
-  .chat-item:hover {
-    background: rgba(255, 255, 255, 0.15);
+
+  button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+    pointer-events: none;
   }
-  .chat-item.active {
-    background: rgba(124, 92, 255, 0.2);
-    border-left: 3px solid #00c8ff;
-  }
+
   .refresh-btn {
-    background: #333;
-    margin-bottom: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+    box-shadow: none;
+    font-weight: 500;
+    font-size: 13px;
+  }
+
+  .refresh-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+    box-shadow: 0 4px 12px rgba(124, 92, 255, 0.15);
+  }
+
+  .refresh-btn::after {
+    display: none;
+  }
+
+  /* Section Title */
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin: 24px 4px 12px 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border-subtle), transparent);
+  }
+
+  /* Chat List */
+  .chat-list {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .chat-item-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between; 
+    gap: 8px;
+    padding: 4px;
+    border-radius: 12px;
+    transition: background 0.15s ease;
+  }
+
+  .chat-item-wrapper:hover {
+    background: rgba(124, 92, 255, 0.05);
+  }
+
+  .chat-item {
+    padding: 12px 14px;
+    background: var(--bg-secondary);
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--accent-primary);
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+
+  .chat-item:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-default);
+    border-left-color: var(--accent-secondary);
+    transform: translateX(2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  .chat-item.active {
+    background: linear-gradient(90deg, rgba(124, 92, 255, 0.15), rgba(124, 92, 255, 0.05));
+    border-left: 3px solid var(--accent-primary);
+    border-color: rgba(124, 92, 255, 0.3);
+    box-shadow: 0 0 20px rgba(124, 92, 255, 0.15);
+  }
+
+  .chat-item-title {
+    font-weight: 550;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    letter-spacing: -0.01em;
+  }
+
+  .chat-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 450;
+  }
+
+  .delete-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    filter: grayscale(1);
+    opacity: 0.6;
+  }
+
+  .delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    filter: grayscale(0);
+    opacity: 1;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+  }
+
+  .delete-btn::after {
+    display: none;
+  }
+
+  /* Empty State */
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px dashed var(--border-default);
+    margin-top: 8px;
+  }
+
+  .empty-state-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+
+  /* Loading State */
+  .loading-state {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-default);
+    border-top-color: var(--accent-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-default);
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(124, 92, 255, 0.3);
   }
 </style>
 </head>
 <body>
-  <button id="newChatBtn">New Chat</button>
-  <button id="refreshBtn" class="refresh-btn">Refresh Chats</button>
+  <div class="sidebar-header">
+    <div class="brand">
+      <div class="brand-icon">✦</div>
+      <div class="brand-text">Agile AI</div>
+    </div>
+    
+    <button id="newChatBtn">
+      <span style="margin-right: 6px;">+</span> New Chat
+    </button>
+    <button id="refreshBtn" class="refresh-btn">
+      <span style="margin-right: 6px;">↻</span> Refresh
+    </button>
+  </div>
+
+  <div class="section-title">Recent Conversations</div>
+  
   <div class="chat-list" id="chatList">
-    <div style="padding: 10px; text-align: center; color: #888;">
-      Loading chats...
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <div>Loading chats...</div>
     </div>
   </div>
 
@@ -61,6 +340,7 @@
     document.getElementById("newChatBtn").addEventListener("click", () => { 
       vscode.postMessage({ command: "newChat" });
     });
+    
     // Refresh button
     document.getElementById("refreshBtn").addEventListener("click", () => {
       vscode.postMessage({ command: "ready" });
@@ -77,26 +357,33 @@
     function updateChatList(chats) {
       if (!chats || chats.length === 0) {
         chatListContainer.innerHTML = `
-          <div style="padding: 10px; text-align: center; color: #888;">
-            No chats yet. Start a new chat!
+          <div class="empty-state">
+            <div class="empty-state-icon">💬</div>
+            <div>No chats yet</div>
+            <div style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Start a new conversation!</div>
           </div>
         `;
         return;
       }
 
       chatListContainer.innerHTML = chats.map(conv => `
-        <div class="chat-item-wrapper" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <div class="chat-item" data-id="${conv.id}" title="${conv.title}" style="flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;">
-            <div style="font-weight: bold; overflow: hidden; text-overflow: ellipsis;">${conv.title}</div>
-            <div style="font-size: 0.8em; color: #ccc;">Click to open</div>
+        <div class="chat-item-wrapper">
+          <div class="chat-item" data-id="${conv.id}" title="${conv.title}">
+            <div class="chat-item-title">${conv.title}</div>
+            <div class="chat-item-meta">Click to open</div>
           </div>
-          <button class="delete-btn" data-id="${conv.id}" title="Delete Chat" style="width: auto; padding: 4px; margin: 0; background: transparent; border: none; font-size: 1.2em; cursor: pointer;">🗑️</button>
+          <button class="delete-btn" data-id="${conv.id}" title="Delete Chat">🗑️</button>
         </div>
       `).join('');
 
       // Add click listeners to chat items
       chatListContainer.querySelectorAll('.chat-item').forEach(item => {
         item.addEventListener('click', () => {
+          // Remove active class from all items
+          chatListContainer.querySelectorAll('.chat-item').forEach(i => i.classList.remove('active'));
+          // Add active class to clicked item
+          item.classList.add('active');
+          
           const conversationId = item.getAttribute('data-id');
           vscode.postMessage({ 
             command: "openChat", 

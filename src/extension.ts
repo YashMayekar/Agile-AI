@@ -211,7 +211,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Send initial greeting message to the LLM
         try {
-          await handleMessage("Hello", true, projectId, panel);
+          await handleMessage("Hello!!!", true, projectId, panel);
         } catch (err) {
           console.error('Failed to send greeting:', err);
           panel.webview.postMessage({
@@ -345,14 +345,59 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function startTreeServer(context: vscode.ExtensionContext) {
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer(async (req: any, res: any) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/actions') {
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk.toString(); });
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body);
+          if (payload && Array.isArray(payload.actions)) {
+            for (const action of payload.actions) {
+              if (action.type === "WRITE" || action.type === "UPDATE") {
+                const choice = await vscode.window.showInformationMessage(
+                  `Allow AI to write to ${action.target}?`,
+                  { modal: true },
+                  "Approve", "Reject"
+                );
+                if (choice === "Approve") {
+                  const dir = path.dirname(action.target);
+                  await fs.promises.mkdir(dir, { recursive: true });
+                  await fs.promises.writeFile(action.target, action.content || '', 'utf8');
+                  vscode.window.showInformationMessage(`Successfully updated ${path.basename(action.target)}`);
+                }
+              } else if (action.type === "DELETE") {
+                const choice = await vscode.window.showWarningMessage(
+                  `Allow AI to delete ${action.target}?`,
+                  { modal: true },
+                  "Approve", "Reject"
+                );
+                if (choice === "Approve") {
+                  if (fs.existsSync(action.target)) {
+                    await fs.promises.unlink(action.target);
+                    vscode.window.showInformationMessage(`Successfully deleted ${path.basename(action.target)}`);
+                  }
+                }
+              }
+            }
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
       return;
     }
 

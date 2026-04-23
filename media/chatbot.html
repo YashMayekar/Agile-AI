@@ -9,122 +9,258 @@
   <title>Streaming Chat</title>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@350;450;550;650&family=JetBrains+Mono:wght@400;500&display=swap');
 
-    :root {
-      --bg1: linear-gradient(135deg, #0f172a 0%, #001219 100%);
-      --bg2: linear-gradient(135deg, #0f172a 0%, #001219 100%);
-      --bubble-user: linear-gradient(90deg, rgba(124, 92, 255, 0.12), rgba(0, 200, 255, 0.06));
-      --bubble-assistant: rgba(255, 255, 255, 0.02);
-      --accent: #7c5cff;
-      --accent-hover: #00c8ff;
-      --text-main: #e6eef8;
-      --text-muted: rgba(255, 255, 255, 0.55);
-      --glass-border: 1px solid rgba(255, 255, 255, 0.05);
-      --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+:root {
+  --bg-primary: #05070f;
+  --bg-secondary: #0a0f1f;
+  --bg-tertiary: #0f1633;
+  --bg-elevated: #0e1431;
+
+  --accent-primary: #8942fa;
+  --accent-secondary: #b153fe;
+  --accent-tertiary: #d13afb;
+  --accent-gradient: linear-gradient(135deg, #8942fa, #b153fe, #d13afb);
+
+  --text-primary: #e6f0ff;
+  --text-secondary: #9fb3d9;
+  --text-tertiary: #5c6f99;
+
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-focus: rgba(137, 66, 250, 0.4);
+
+  --bubble-user-bg: rgba(137, 66, 250, 0.15);
+  --bubble-user-border: rgba(137, 66, 250, 0.3);
+  --bubble-assistant-bg: rgba(255, 255, 255, 0.05);
+  --bubble-assistant-border: rgba(255, 255, 255, 0.1);
+
+  --shadow-glow: 0 0 28px rgba(137, 66, 250, 0.45);
+  --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+    * {
+      box-sizing: border-box;
     }
 
     html,
     body {
       height: 100%;
       margin: 0;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg1);
-      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
       overflow: hidden;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Subtle grid pattern overlay with purple tint */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        linear-gradient(rgba(124, 92, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124, 92, 255, 0.03) 1px, transparent 1px);
+      background-size: 100px 100px;
+      pointer-events: none;
+      z-index: 0;
     }
 
     .container {
       display: flex;
       flex-direction: column;
-      height: calc(100vh - 40px);
-      padding: 20px;
-      gap: 16px;
-      max-width: 960px;
+      height: 100vh;
+      max-width: 1000px;
       margin: 0 auto;
+      padding: 24px;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
     }
 
     .topbar {
       display: flex;
       align-items: center;
-      gap: 14px;
-      padding-bottom: 12px;
-      border-bottom: var(--glass-border);
+      gap: 16px;
+      padding: 0 4px;
+      flex-shrink: 0;
     }
 
     .logo {
-      width: 44px;
-      height: 44px;
+      width: 42px;
+      height: 42px;
       border-radius: 12px;
-      background: linear-gradient(135deg, rgba(124, 92, 255, 0.12), rgba(0, 200, 255, 0.05));
+      background: var(--accent-gradient);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--accent);
-      font-weight: 700;
-      font-size: 1.4rem;
-      box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
-      animation: pulse-glow 3s infinite alternate;
+      color: white;
+      font-weight: 650;
+      font-size: 1.3rem;
+      box-shadow: var(--shadow-glow), var(--shadow-float);
+      position: relative;
+      overflow: hidden;
     }
 
-    @keyframes pulse-glow {
-      0% {
-        box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
-      }
+    .logo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.3), transparent);
+    }
 
-      100% {
-        box-shadow: 0 0 25px rgba(59, 130, 246, 0.6);
-      }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     .heading {
-      font-size: 18px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 650;
       letter-spacing: -0.02em;
-      color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .subheading {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-weight: 450;
+    }
+
+    /* Thoughts Box - Floating over chat */
+    .thoughts-box {
+      position: absolute;
+      top: 2vh;
+      right: 32px;
+      border: 1px solid var(--border-default);
+      border-radius: 16px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+      font-size: 13px;
+      padding: 16px 20px;
+      cursor: pointer;
+      min-width: 280px;
+      max-width: 420px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-float), 0 0 0 1px rgba(0,0,0,0.5);
+      backdrop-filter: blur(20px);
+      z-index: 100;
+      max-height: 60vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .thoughts-box:hover {
+      border-color: var(--border-focus);
+    }
+
+    .thoughts-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 550;
+      color: var(--accent-primary);
+      gap: 16px;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .thoughts-content {
+      display: none;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.5;
+      flex: 1;
+      min-height: 0; 
+    }
+
+    .thoughts-content::-webkit-scrollbar { 
+      width: 6px; 
+    }
+    .thoughts-content::-webkit-scrollbar-track { 
+      background: transparent; 
+    }
+    .thoughts-content::-webkit-scrollbar-thumb { 
+      background: var(--border-default); 
+      border-radius: 3px; 
+    }
+    .thoughts-content::-webkit-scrollbar-thumb:hover { 
+      background: var(--border-focus); 
+    }
+
+    .thoughts-box.expanded {
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(124, 92, 255, 0.2);
+    }
+
+    .thoughts-box.expanded .thoughts-content {
+      display: block;
+      animation: slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1); /*is this line causing issues?*/ 
+    }
+
+    @keyframes slide-down {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .chat-panel {
       flex: 1;
       overflow-y: auto;
-      border-radius: 16px;
-      padding: 20px;
-      background: var(--bg2);
-      border: var(--glass-border);
-      box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
+      border-radius: 20px;
+      padding: 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.02);
+      position: relative;
     }
 
     .chat-panel::-webkit-scrollbar {
-      width: 6px;
+      width: 8px;
     }
 
     .chat-panel::-webkit-scrollbar-track {
       background: transparent;
+      margin: 8px 0;
     }
 
     .chat-panel::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
+      background: var(--border-default);
+      border-radius: 4px;
+      border: 2px solid var(--bg-secondary);
     }
 
     .chat-panel::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(124, 92, 255, 0.3);
     }
 
     .message {
       max-width: 85%;
-      margin-bottom: 20px;
-      padding: 14px 18px;
-      border-radius: 16px;
-      box-shadow: var(--shadow-sm);
-      line-height: 1.6;
+      margin-bottom: 24px;
+      padding: 16px 20px;
+      border-radius: 18px;
+      line-height: 1.65;
       font-size: 14.5px;
-      animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      animation: message-appear 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       opacity: 0;
-      transform: translateY(10px);
+      transform: translateY(12px);
+      position: relative;
     }
 
-    @keyframes slide-up {
+    @keyframes message-appear {
       to {
         opacity: 1;
         transform: translateY(0);
@@ -133,18 +269,19 @@
 
     .message.user {
       margin-left: auto;
-      background: var(--bubble-user);
-      color: white;
-      border-bottom-right-radius: 4px;
+      background: var(--bubble-user-bg);
+      border: 1px solid var(--bubble-user-border);
+      color: var(--text-primary);
+      border-bottom-right-radius: 6px;
+      box-shadow: 0 4px 24px rgba(124, 92, 255, 0.1);
     }
 
     .message.assistant {
       margin-right: auto;
-      background: var(--bubble-assistant);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-bottom-left-radius: 4px;
+      background: var(--bubble-assistant-bg);
+      border: 1px solid var(--bubble-assistant-border);
+      border-bottom-left-radius: 6px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
     }
 
     .rendered {
@@ -153,107 +290,131 @@
     }
 
     .rendered strong {
-      color: #fff;
-      font-weight: 600;
+      color: var(--accent-secondary);
+      font-weight: 650;
+    }
+
+    .rendered em {
+      color: var(--accent-tertiary);
+      font-style: italic;
     }
 
     .rendered code {
-      background: rgba(0, 0, 0, 0.4);
+      background: rgba(124, 92, 255, 0.1);
       padding: 3px 6px;
       border-radius: 6px;
-      font-family: 'Fira Code', 'Courier New', monospace;
-      font-size: 13px;
-      color: #a5b4fc;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      color: var(--accent-secondary);
+      border: 1px solid rgba(124, 92, 255, 0.2);
     }
 
     .rendered pre.codeblock {
-      margin: 12px 0;
-      padding: 16px;
+      margin: 16px 0;
+      padding: 20px;
       border-radius: 12px;
       overflow-x: auto;
-      background: #000;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+      background: #0f0f14;
+      border: 1px solid var(--border-default);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
     }
 
     .rendered pre.codeblock code {
       background: none;
       padding: 0;
       color: #e2e8f0;
-      font-size: 13.5px;
+      font-size: 13px;
+      border: none;
+      line-height: 1.6;
     }
 
-    h1,
-    h2,
-    h3 {
-      color: #e2e8f0;
-      margin: 16px 0 8px 0;
-      font-weight: 600;
+    .rendered h1, .rendered h2, .rendered h3 {
+      color: var(--text-primary);
+      margin: 24px 0 12px 0;
+      font-weight: 650;
+      letter-spacing: -0.02em;
     }
 
+    .rendered h1 { font-size: 1.5em; }
+    .rendered h2 { font-size: 1.25em; }
+    .rendered h3 { font-size: 1.1em; }
+
+    .rendered ul, .rendered ol {
+      margin: 12px 0;
+      padding-left: 20px;
+    }
+
+    .rendered li {
+      margin: 4px 0;
+    }
+
+    /* Modern Loading Animation */
     .loader {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 8px 0;
+      gap: 4px;
+      padding: 4px 0;
     }
 
     .dot {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--accent);
-      opacity: 0.15;
-      animation: blink 1s infinite;
+      background: var(--accent-primary);
+      animation: bounce 1.4s infinite ease-in-out both;
     }
 
-    .dot:nth-child(2) {
-      animation-delay: 0.15s;
-    }
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
 
-    .dot:nth-child(3) {
-      animation-delay: 0.3s;
-    }
-
-    @keyframes blink {
-      0% {
-        opacity: 0.15;
-        transform: translateY(0);
+    @keyframes bounce {
+      0%, 80%, 100% { 
+        transform: scale(0);
+        opacity: 0.3;
       }
-
-      50% {
+      40% { 
+        transform: scale(1);
         opacity: 1;
-        transform: translateY(-6px);
-      }
-
-      100% {
-        opacity: 0.15;
-        transform: translateY(0);
       }
     }
 
     .composer {
       display: flex;
-      gap: 12px;
-      align-items: flex-end;
-      padding: 12px;
-      border-radius: 16px;
-      background: var(--bg2);
-      border: var(--glass-border);
-      box-shadow: var(--shadow-sm);
+      gap: 16px;
+      align-items: flex-center;
+      padding: 16px;
+      border-radius: 20px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-default);
+      box-shadow: var(--shadow-float);
+      position: relative;
+    }
+
+    .composer::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: 20px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(124, 92, 255, 0.3), transparent 50%);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
     }
 
     .input {
       flex: 1;
-      height: 70%;
-      border-radius: 12px;
-      padding: 14px 16px;
-      background: var(--bubble-user);
-      color: #f8fafc;
-      border: 1px solid rgba(255, 255, 255, 0.54);
+      min-height: 52px;
+      max-height: 200px;
+      border-radius: 14px;
+      padding: 14px 18px;
+      background: rgba(0, 0, 0, 0.2);
+      color: var(--text-primary);
+      border: 1px solid var(--bubble-assistant-border);
       resize: none;
-      font-size: 14.5px;
+      font-size: 15px;
       font-family: inherit;
       transition: all 0.2s ease;
       line-height: 1.5;
@@ -261,44 +422,52 @@
 
     .input:focus {
       outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
       background: rgba(0, 0, 0, 0.3);
     }
 
     .input::placeholder {
-      color: #64748b;
+      color: var(--text-tertiary);
     }
 
     .controls-panel {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      min-width: 130px;
+      gap: 12px;
+      min-width: 140px;
     }
 
     button.send {
       border: none;
-      background: var(--accent);
+      background: var(--accent-gradient);
       color: white;
-      padding: 12px;
-      border-radius: 12px;
+      padding: 14px;
+      border-radius: 14px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 550;
       font-size: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-      height: 48px;
+      box-shadow: 0 4px 20px rgba(124, 92, 255, 0.35);
+      height: 52px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    button.send::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
     }
 
     button.send:hover {
-      background: var(--accent-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+      box-shadow: 0 6px 28px rgba(124, 92, 255, 0.5);
     }
 
     button.send:active {
@@ -311,82 +480,64 @@
       justify-content: space-between;
       gap: 8px;
       background: rgba(0, 0, 0, 0.2);
-      padding: 6px 10px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
     }
 
     .mode-row label {
       font-size: 12px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
     #Mode {
       background: transparent;
-      color: #e2e8f0;
+      color: var(--accent-secondary);
       border: none;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 550;
       cursor: pointer;
       outline: none;
       padding: 2px;
     }
 
     #Mode option {
-      background: var(--bg2);
-      color: white;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
     }
 
-    .thoughts-box {
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 8px;
-      background: var(--bg2);
-      color: var(--text-muted);
-      font-size: 13px;
-      padding: 8px 12px;
-      cursor: pointer;
-      min-width: 150px;
-      max-width: 320px;
-      transition: all 0.2s ease;
-      position: absolute;
-      right: 20px;
-      top: 20px;
-      z-index: 100;
-      box-shadow: var(--shadow-sm);
+    /* Status Message Styling */
+    .status-text {
+      color: var(--accent-secondary);
+      font-style: italic;
     }
 
-    .thoughts-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-weight: 600;
-      color: var(--accent);
-      gap: 10px;
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-tertiary);
+      font-size: 14px;
     }
 
-    .thoughts-content {
-      display: none;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      max-height: 40vh;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: 'Courier New', monospace;
-      color: #cbd5e1;
-      font-size: 12px;
-      line-height: 1.4;
-    }
-
-    /* Scrollbar styling for thoughts */
-    .thoughts-content::-webkit-scrollbar { width: 4px; }
-    .thoughts-content::-webkit-scrollbar-track { background: transparent; }
-    .thoughts-content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
-
-    .thoughts-box.expanded .thoughts-content {
-      display: block;
+    /* Responsive */
+    @media (max-width: 640px) {
+      .container {
+        padding: 16px;
+      }
+      .message {
+        max-width: 90%;
+        padding: 14px 16px;
+      }
+      .thoughts-box {
+        left: 16px;
+        right: 16px;
+        min-width: auto;
+        max-width: none;
+      }
     }
   </style>
 </head>
@@ -395,17 +546,21 @@
   <div class="container">
     <div class="topbar">
       <div class="logo">✦</div>
-      <div style="flex: 1">
+      <div class="brand">
         <div class="heading">Agile AI Assistant</div>
-      </div>
-      <div class="thoughts-box" id="thoughtsBox" style="display: none;">
-        <div class="thoughts-header" id="thoughtsHeader">
-          <span>LLM Thoughts</span>
-          <span id="thoughtsToggle">▼</span>
-        </div>
-        <div class="thoughts-content" id="thoughtsContent"></div>
+        <div class="subheading">Agentic Coding Companion</div>
       </div>
     </div>
+    
+    <!-- Thoughts Box floating over chat -->
+    <div class="thoughts-box" id="thoughtsBox" style="display: none;">
+      <div class="thoughts-header" id="thoughtsHeader">
+        <span>Reasoning Process</span>
+        <span id="thoughtsToggle">▼</span>
+      </div>
+      <div class="thoughts-content" id="thoughtsContent"></div>
+    </div>
+    
 
     <div id="chat" class="chat-panel"></div>
 
@@ -415,14 +570,14 @@
       <div class="controls-panel">
         <button id="send" class="send">
           Send
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
             stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
         </button>
         <div class="mode-row">
-          <label for="Mode">Mode:</label>
+          <label for="Mode">Mode</label>
           <select name="Mode" id="Mode">
             <option value="planning">Planning</option>
             <option value="coding">Coding</option>
@@ -437,7 +592,10 @@
     const projectId = "{{projectId}}";
 
     const chat = document.getElementById('chat');
-    let typingIndicator = null;          // for the old loader (kept for compatibility)
+    const emptyState = document.getElementById('emptyState');
+    const thoughtsBox = document.getElementById('thoughtsBox');
+    const thoughtsContent = document.getElementById('thoughtsContent');
+    let typingIndicator = null;
     let currentAssistantMessageDiv = null;
     let currentAssistantMessageContent = '';
     let currentAssistantThoughtContent = '';
@@ -449,47 +607,38 @@
     let statusIsThinking = false;
     let statusBaseText = '';
     let autoScrollEnabled = true;
+    let thoughtsAutoScrollEnabled = true;
 
     document.getElementById('thoughtsHeader').onclick = function() {
-      const box = document.getElementById('thoughtsBox');
-      box.classList.toggle('expanded');
+      thoughtsBox.classList.toggle('expanded');
       const toggle = document.getElementById('thoughtsToggle');
-      if (box.classList.contains('expanded')) {
+      if (thoughtsBox.classList.contains('expanded')) {
         toggle.textContent = '▲';
+        thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
       } else {
         toggle.textContent = '▼';
       }
     };
 
-
     chat.addEventListener('scroll', () => {
-      const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 10;
+      const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 20;
       autoScrollEnabled = isNearBottom;
     });
 
-    /**
-     * Convert plain text with markdown‑like syntax to safe HTML.
-     * Supports:
-     *   - **bold** → <strong>
-     *   - `inline code` → <code>
-     *   - triple backtick code blocks → <pre class="codeblock"><code>...</code></pre>
-     *   - newlines are preserved via CSS white-space: pre-wrap (no <br> conversion)
-     *   - literal "\n" (two characters) is replaced with an actual newline
-     */
+    thoughtsContent.addEventListener('scroll', () => {
+      const isNearBottom = thoughtsContent.scrollHeight - thoughtsContent.scrollTop - thoughtsContent.clientHeight < 20;
+      thoughtsAutoScrollEnabled = isNearBottom;
+    });
+
     function renderMessageText(text) {
       if (!text) return '';
-
-      // Replace literal backslash+n with actual newline character
       text = text.replace(/\\n/g, '\n');
-
-      // First, extract code blocks so they aren't processed by other rules
       const blocks = [];
       text = text.replace(/```([\s\S]*?)```/g, (match, code) => {
         blocks.push(code);
         return `%%CODEBLOCK${blocks.length - 1}%%`;
       });
 
-      // Escape HTML special characters
       let escaped = text.replace(/[&<>"]/g, function (m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
@@ -498,15 +647,9 @@
         return m;
       });
 
-      // Bold: **text** (non-greedy)
       escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-
-      // Inline code: `text`
       escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-      // NOTE: We do NOT replace \n with <br> – newlines are preserved by CSS white-space: pre-wrap
-
-      // Restore code blocks
       escaped = escaped.replace(/%%CODEBLOCK(\d+)%%/g, (match, index) => {
         const code = blocks[index];
         const safeCode = code.replace(/[&<>]/g, function (m) {
@@ -521,14 +664,9 @@
       return escaped;
     }
 
-    /**
-     * Add a message bubble to the chat.
-     * sender: 'user' or 'assistant' (bot)
-     * text: raw message string
-     * isTyping: if true, shows a loader instead of text (old style, kept for compatibility)
-     */
     function addMessage(sender, text, isTyping = false) {
-      // If there's an existing typing indicator from the same sender, remove it
+      if (emptyState) emptyState.style.display = 'none';
+      
       if (sender === 'assistant' && typingIndicator) {
         typingIndicator.remove();
         typingIndicator = null;
@@ -541,7 +679,6 @@
       contentDiv.className = 'rendered';
 
       if (isTyping) {
-        // Show a loader (old style)
         const loader = document.createElement('div');
         loader.className = 'loader';
         for (let i = 0; i < 3; i++) {
@@ -550,9 +687,8 @@
           loader.appendChild(dot);
         }
         contentDiv.appendChild(loader);
-        typingIndicator = div;  // remember this element so we can remove it later
+        typingIndicator = div;
       } else {
-        // Render actual message
         contentDiv.innerHTML = renderMessageText(text);
       }
 
@@ -563,24 +699,21 @@
       }
     }
 
-    // Handle send button
     document.getElementById('send').onclick = () => {
       const input = document.getElementById('input');
       const val = input.value.trim();
       if (!val) return;
 
       autoScrollEnabled = true;
-
-      // Add user message immediately
       addMessage('user', val);
 
-      // Reset streaming state for new assistant message
       currentAssistantMessageDiv = null;
       currentAssistantMessageContent = '';
-      document.getElementById('thoughtsBox').style.display = 'none';
-      document.getElementById('thoughtsBox').classList.remove('expanded');
+      thoughtsBox.style.display = 'none';
+      thoughtsBox.classList.remove('expanded');
       document.getElementById('thoughtsToggle').textContent = '▼';
-      document.getElementById('thoughtsContent').textContent = '';
+      thoughtsContent.textContent = '';
+      thoughtsAutoScrollEnabled = true;
 
       if (currentSystemMessageDiv) {
         currentSystemMessageDiv.remove();
@@ -592,7 +725,6 @@
       }
       lastStatusStr = '';
 
-      // Send message to extension
       const mode = document.getElementById('Mode').value;
       vscode.postMessage({
         command: 'sendMessage',
@@ -601,9 +733,9 @@
       });
 
       input.value = '';
+      input.style.height = 'auto';
     };
 
-    // Allow Enter to send (but Shift+Enter for newline)
     document.getElementById('input').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -611,15 +743,17 @@
       }
     });
 
-    // Listen for messages from the extension
+    document.getElementById('input').addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+    });
+
     window.addEventListener('message', e => {
       const msg = e.data;
       if (msg.type === 'addMessage') {
-        // This is for user messages or maybe fallback
         addMessage(msg.sender, msg.message, false);
       } else if (msg.type === 'botChunk') {
         if (!currentAssistantMessageDiv && !msg.chunk) {
-          // Streaming thoughts, but no actual response yet. Ensure text animation is running.
           if (!currentSystemMessageDiv) {
             currentSystemMessageDiv = document.createElement('div');
             currentSystemMessageDiv.className = 'message assistant';
@@ -628,7 +762,7 @@
             currentSystemMessageDiv.appendChild(contentDiv);
             chat.appendChild(currentSystemMessageDiv);
             
-            statusBaseText = 'ℹ️ Thinking';
+            statusBaseText = 'Thinking';
             statusIsThinking = true;
             statusSeconds = 0;
             statusDotCount = 1;
@@ -640,25 +774,23 @@
                 return;
               }
               statusSeconds++;
-              statusDotCount = (statusDotCount % 4) + 1; // 1, 2, 3 dots
+              statusDotCount = (statusDotCount % 4) + 1;
               let dots = '.'.repeat(statusDotCount);
-
               let displayStr = statusBaseText;
               if (statusIsThinking && statusSeconds >= 10) {
                 const moreCount = Math.floor(statusSeconds / 10);
                 if (moreCount === 1) {
-                  displayStr = 'ℹ️ Thinking harder';
+                  displayStr = 'Thinking harder';
                 } else if (moreCount > 1) {
                   const mores = 'more '.repeat(moreCount - 1);
-                  displayStr = `ℹ️ Thinking ${mores}longer`;
+                  displayStr = `Thinking ${mores}longer`;
                 }
               }
               let cDiv = currentSystemMessageDiv.querySelector('.rendered');
-              if (cDiv) cDiv.innerHTML = displayStr + dots;
+              if (cDiv) cDiv.innerHTML = `<span class="status-text">${displayStr}${dots}</span>`;
             }, 1000);
           }
         } else if (!currentAssistantMessageDiv && msg.chunk) {
-          // Transition to response message
           if (statusIntervalId) {
             clearInterval(statusIntervalId);
             statusIntervalId = null;
@@ -666,7 +798,7 @@
           if (currentSystemMessageDiv) {
             currentAssistantMessageDiv = currentSystemMessageDiv;
             currentSystemMessageDiv = null;
-            currentAssistantMessageDiv.querySelector('.rendered').innerHTML = ''; // Clear status text
+            currentAssistantMessageDiv.querySelector('.rendered').innerHTML = '';
           } else {
             currentAssistantMessageDiv = document.createElement('div');
             currentAssistantMessageDiv.className = 'message assistant';
@@ -685,46 +817,52 @@
         
         if (msg.thoughtChunk) {
           currentAssistantThoughtContent += msg.thoughtChunk;
-          document.getElementById('thoughtsBox').style.display = 'block';
-          document.getElementById('thoughtsContent').textContent = currentAssistantThoughtContent;
+          thoughtsBox.style.display = 'flex';
+          thoughtsContent.textContent = currentAssistantThoughtContent;
+          
+          if (thoughtsAutoScrollEnabled) {
+            thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
+          }
         }
 
         if (autoScrollEnabled) {
           chat.scrollTop = chat.scrollHeight;
         }
       } else if (msg.type === 'botMessage') {
-        // Final message for a bunch: if we have been streaming into a div, finalize it.
         if (currentAssistantMessageDiv) {
           const contentDiv = currentAssistantMessageDiv.querySelector('.rendered');
           if (msg.message) {
             contentDiv.innerHTML = renderMessageText(msg.message);
           }
           if (msg.thought) {
-            document.getElementById('thoughtsBox').style.display = 'block';
-            document.getElementById('thoughtsContent').textContent = msg.thought;
+            thoughtsBox.style.display = 'flex';
+            thoughtsContent.textContent = msg.thought;
+            if (thoughtsAutoScrollEnabled) {
+              thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
+            }
           }
           currentAssistantMessageDiv = null;
           currentAssistantMessageContent = '';
           currentAssistantThoughtContent = '';
         } else if (msg.message || msg.thought) {
-          // No streaming div existed (e.g. no chunks yet), but we have a final message
           if (msg.message) {
             addMessage('assistant', msg.message, false);
           }
           if (msg.thought) {
-            document.getElementById('thoughtsBox').style.display = 'block';
-            document.getElementById('thoughtsContent').textContent = msg.thought;
+            thoughtsBox.style.display = 'flex';
+            thoughtsContent.textContent = msg.thought;
+            if (thoughtsAutoScrollEnabled) {
+              thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
+            }
           }
         }
 
-        // Always reset streaming content state for next bunch
         currentAssistantMessageContent = '';
         currentAssistantThoughtContent = '';
         if (autoScrollEnabled) {
           chat.scrollTop = chat.scrollHeight;
         }
 
-        // Optionally handle actions
         if (msg.actions) {
           console.log('Actions:', msg.actions);
         }
@@ -733,9 +871,7 @@
           clearInterval(statusIntervalId);
           statusIntervalId = null;
         }
-        // Show error message
         addMessage('assistant', `❌ ${msg.message}`, false);
-        // Reset streaming state
         currentAssistantMessageDiv = null;
         currentAssistantMessageContent = '';
       } else if (msg.type === 'clearMessages') {
@@ -744,16 +880,18 @@
           statusIntervalId = null;
         }
         chat.innerHTML = '';
+        if (emptyState) emptyState.style.display = 'block';
         currentAssistantMessageDiv = null;
         currentAssistantMessageContent = '';
         currentAssistantThoughtContent = '';
         lastStatusStr = '';
         currentSystemMessageDiv = null;
         
-        document.getElementById('thoughtsBox').style.display = 'none';
-        document.getElementById('thoughtsBox').classList.remove('expanded');
+        thoughtsBox.style.display = 'none';
+        thoughtsBox.classList.remove('expanded');
         document.getElementById('thoughtsToggle').textContent = '▼';
-        document.getElementById('thoughtsContent').textContent = '';
+        thoughtsContent.textContent = '';
+        thoughtsAutoScrollEnabled = true;
       } else if (msg.type === 'statusUpdate') {
         if (msg.data === 'IDLE' || msg.data.status === 'IDLE' || (msg.data.message && msg.data.message === 'IDLE')) {
           if (currentSystemMessageDiv) {
@@ -768,18 +906,17 @@
           return;
         }
 
-        // If the LLM is actively streaming a response, ignore any backend status updates
         if (currentAssistantMessageDiv) return;
 
         if (msg.data && msg.data.message) {
           const str = msg.data.object ? msg.data.object + '|' + msg.data.message : msg.data.message;
           if (str !== lastStatusStr) {
             lastStatusStr = str;
-            let textToShow = `ℹ️ ${msg.data.message}`;
+            let textToShow = `${msg.data.message}`;
             if (msg.data.message.includes('INITIAL')) {
               textToShow = msg.data.message;
             } else if (msg.data.object === 'LLM' && msg.data.message === 'THINKING') {
-              textToShow = 'ℹ️ Thinking';
+              textToShow = 'Thinking';
             }
 
             if (!currentSystemMessageDiv) {
@@ -796,7 +933,7 @@
             statusSeconds = 0;
             statusDotCount = 1;
 
-            currentSystemMessageDiv.querySelector('.rendered').innerHTML = statusBaseText + '.';
+            currentSystemMessageDiv.querySelector('.rendered').innerHTML = `<span class="status-text">${statusBaseText}.</span>`;
             if (autoScrollEnabled) {
               chat.scrollTop = chat.scrollHeight;
             }
@@ -808,29 +945,25 @@
                 return;
               }
               statusSeconds++;
-              statusDotCount = (statusDotCount % 4) + 1; // 1, 2, 3 dots
+              statusDotCount = (statusDotCount % 4) + 1;
               let dots = '.'.repeat(statusDotCount);
-
               let displayStr = statusBaseText;
               if (statusIsThinking && statusSeconds >= 10) {
                 const moreCount = Math.floor(statusSeconds / 10);
                 if (moreCount === 1) {
-                  displayStr = 'ℹ️ Thinking harder';
+                  displayStr = 'Thinking harder';
                 } else if (moreCount > 1) {
                   const mores = 'more '.repeat(moreCount - 1);
-                  displayStr = `ℹ️ Thinking ${mores}longer`;
+                  displayStr = `Thinking ${mores}longer`;
                 }
               }
-
               let cDiv = currentSystemMessageDiv.querySelector('.rendered');
-              if (cDiv) cDiv.innerHTML = displayStr + dots;
+              if (cDiv) cDiv.innerHTML = `<span class="status-text">${displayStr}${dots}</span>`;
             }, 1000);
           }
         }
       }
     });
   </script>
-
 </body>
-
 </html>
