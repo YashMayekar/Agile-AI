@@ -211,7 +211,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Send initial greeting message to the LLM
         try {
-          await handleMessage("Hello!!!", true, projectId, panel);
+          await handleMessage("Hello", true, projectId, panel);
         } catch (err) {
           console.error('Failed to send greeting:', err);
           panel.webview.postMessage({
@@ -548,7 +548,12 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
       const resp = await fetch(`http://localhost:4000/api/project/${realProjectId}/status`);
       if (resp.ok) {
         const data = await resp.json();
-        panel.webview.postMessage({ type: 'statusUpdate', data: data.status });
+        panel.webview.postMessage({
+          type: 'statusUpdate',
+          data: data.status,
+          currentStep: data.currentStep,
+          currentAgent: data.currentAgent
+        });
       }
     } catch {
       // ignore
