@@ -21,9 +21,22 @@ export class WriteHandler implements ActionHandler {
   ): Promise<void> {
     logger.info(`[${MODULE}] Writing ${safePath}`);
 
+    let state: any;
     try {
+      // Ensure the directory exists
+      const dir = require("path").dirname(safePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        logger.info(`[${MODULE}] Created directory ${dir}`);
+      }
       fs.writeFileSync(safePath, action.content);
       systemStatuses.set(projectId, { object: "", message: "WRITE_SUCCESS: " + safePath });
+      state = ProjectStateRepository.load(projectId);
+      // get filename
+      const filename = safePath.split('\\').pop() || "";
+      const new_version = state.documents[filename] ? state.documents[filename].version + 1 : 1;
+      state.documents[filename] = { status: "completed", version: new_version, updatedAt: new Date().toISOString() }  ;
+      ProjectStateRepository.save(projectId, state);
     } catch (e: any) {
       logger.error(`[${MODULE}] Failed to write file ${safePath}: ${e?.message || e}`);
       context.sysResults.push({ type: "WRITE", target: action.target, content: "WRITE_ERROR" });

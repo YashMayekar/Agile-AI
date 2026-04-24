@@ -32,7 +32,7 @@ steps:
 
   - id: 1
     prev: [0]
-    name: Project Brief Creation
+    name: Perform Brainstorming or Creating Project Brief.
     agent: analyst
     requires: null
     creates:
@@ -78,18 +78,18 @@ steps:
       - prd.md
       - front-end-spec.md
     creates:
-      - fullstack-architecture.md
+      - architecture.md
     template: 
-      - fullstack-architecture-tmpl.md
+      - architecture-tmpl.md
     notes: "Design fullstack architecture, may suggest PRD updates."
-    next: [5,6]
+    next: [8]
 
   - id: 5
     prev: [4, 3]
     name: PRD Update Based on Architecture Feedback
     agent: pm
     requires:
-      - fullstack-architecture.md
+      - architecture.md
       - prd.md
     creates:
       - prd.md
@@ -105,7 +105,7 @@ steps:
     name: Documentation Review and Validation
     agent: po
     requires:
-      - fullstack-architecture.md
+      - architecture.md
       - prd.md                      # special keyword meaning all docs created so far
       - project-brief.md
     creates:
@@ -120,7 +120,7 @@ steps:
     name: PRD Sharding for Development
     agent: po
     requires:
-      - fullstack-architecture.md
+      - architecture.md
       - prd.md                      
       - project-brief.md
     creates:
@@ -139,7 +139,9 @@ steps:
     name: Epic Creation
     agent: sm
     requires:
-      - sharded_docs.md
+      - architecture.md
+      - prd.md                      # special keyword meaning all docs created so far
+      - project-brief.md
     creates:
       - "story-{{storyIndex}}.md"        # filename includes the index
     template: story-tmpl.md
@@ -166,8 +168,7 @@ steps:
     name: Story Implementation
     agent: dev
     requires:
-      - "story-{{storyIndex}}.md"
-      - implementation-rules.md
+      - "stories/"
     creates:
       - "implementation-{{storyIndex}}/"     # directory for this story's files
     template: implementation-tmpl

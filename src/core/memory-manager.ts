@@ -70,7 +70,7 @@ export class MemoryManager {
     logger.info(`[${MODULE}] Conversation stored successfully`);
 
     // Async memory summarization
-    this.triggerSummary(projectId).catch(e => logger.error(`[${MODULE}] Async summary failed: ${e}`));
+    // this.triggerSummary(projectId).catch(e => logger.error(`[${MODULE}] Async summary failed: ${e}`));
   }
 
   private static async triggerSummary(projectId: string) {
@@ -114,9 +114,10 @@ Combine the previous summary with the key points from the new conversations into
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: "nemotron-3-nano:4b", // using main model for good summary capability
+          model: "gemma4:e4b", // using main model for good summary capability
           prompt: prompt,
-          stream: false
+          stream: false,
+          thinking: false,
         })
       });
 

@@ -52,6 +52,10 @@ export class WorkflowHandler implements ActionHandler {
 
     state.currentAgent = WorkflowEngine.getStepById(newStep).agent
 
+    state.systemStatus = WorkflowEngine.getStepById(newStep) ? `Moved to step ${newStep}: ${WorkflowEngine.getStepById(newStep).name}` : "Executing step";
+
+    state.currentStepName = WorkflowEngine.getStepById(newStep).name;
+
     try {
       ProjectStateRepository.save(projectId, state);
     } catch (e: any) {

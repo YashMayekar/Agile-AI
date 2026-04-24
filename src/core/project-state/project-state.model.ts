@@ -60,24 +60,14 @@ export interface ProjectState {
   phase: "planning" | "designing" | "development" | "testing";
   currentStepId: number | string | null;   // current step (or instance) to execute
   currentAgent: string;
-
+  currentStepName: string;
   systemStatus: string;
 
   workflowFile: string;
 
   documents: Record<string, ProjectDocument>;
-  dialogueHistory?: Array<{ role: "user" | "assistant"; content: string }>;
-
   // One‑time completed steps (steps that will never be repeated)
   completedSteps: (number | string)[];
-
-
-  // Persistent memory for the project (used by agents)
-  contextMemory: {
-    summary: string;
-    decisions: string[];
-    architectureNotes: string[];
-  };
 
   // Runtime variables used by the workflow
   dynamicContext: {

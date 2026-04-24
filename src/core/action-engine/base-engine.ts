@@ -62,22 +62,107 @@ export class BaseActionEngine {
 
   // --- Utility Methods (unchanged) ---
   public static parseResponse(res: string): ActionResponse {
-    logger.debug(`[${MODULE}] Parsing LLM response...}`);
-    try {
-      const parsed = JSON.parse(res);
-      if (!parsed || typeof parsed !== "object") {
-        throw new Error("Invalid response structure");
-      }
-      logger.debug(`[${MODULE}] Response Parsed Successfully..`);
+  logger.debug(`[${MODULE}] Parsing LLM response...`);
 
-      return parsed as ActionResponse;
-    } catch (e: any) {
-      logger.error(`[${MODULE}] Failed to parse response: ${e.message}`);
-      throw new Error("Invalid JSON response");
+  try {
+    const trimmed = res.trim();
+
+    // Strategy 1: Try to parse the whole trimmed string directly
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") {
+        logger.debug(`[${MODULE}] Direct JSON parse succeeded.`);
+        return parsed as ActionResponse;
+      }
+    } catch {
+      // Not a valid JSON object – continue to fallback strategies
+    }
+
+    // Strategy 2: Extract JSON from markdown code blocks
+    const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)\n\s*```/g;
+    let match: RegExpExecArray | null;
+    while ((match = codeBlockRegex.exec(trimmed)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        if (parsed && typeof parsed === "object") {
+          logger.debug(`[${MODULE}] Extracted JSON from markdown code block.`);
+          return parsed as ActionResponse;
+        }
+      } catch {
+        // Continue searching for another code block
+      }
+    }
+
+    // Strategy 3: Find the first '{' or '[' and extract a balanced JSON object/array
+    const firstBraceIndex = trimmed.search(/[{\[]/);
+    if (firstBraceIndex !== -1) {
+      const jsonCandidate = this.extractBalancedJson(trimmed, firstBraceIndex);
+      if (jsonCandidate) {
+        try {
+          const parsed = JSON.parse(jsonCandidate);
+          if (parsed && typeof parsed === "object") {
+            logger.debug(`[${MODULE}] Extracted JSON using brace matching.`);
+            return parsed as ActionResponse;
+          }
+        } catch {
+          // Not valid JSON – fall through
+        }
+      }
+    }
+
+    // If all strategies fail, throw an error
+    throw new Error("No valid JSON object found in response");
+  } catch (e: any) {
+    logger.error(`[${MODULE}] Failed to parse response: ${e.message}`);
+    throw new Error("Invalid JSON response");
+  }
+}
+
+/**
+ * Extract a balanced JSON string starting at the given index.
+ * Supports both objects `{...}` and arrays `[...]`.
+ */
+ static extractBalancedJson(str: string, startIdx: number): string | null {
+  const openChar = str[startIdx];
+  const closeChar = openChar === '{' ? '}' : (openChar === '[' ? ']' : null);
+  if (!closeChar) return null;
+
+  let balance = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < str.length; i++) {
+    const ch = str[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (ch === openChar) balance++;
+      if (ch === closeChar) balance--;
+
+      if (balance === 0) {
+        return str.substring(startIdx, i + 1);
+      }
     }
   }
+  return null;
+}
 
-  public static getActions(res: string): Action[] | null {
+  public static getActions(res: string | null): Action[] | null {
+    if (!res) return null;
     const response = this.parseResponse(res);
     if (response.actions && response.actions.length > 0) {
       logger.info(`[${MODULE}] Actions Derived: ${JSON.stringify(response.actions)}`);
@@ -215,6 +300,20 @@ ${this.skippedSYSactions
 
     //     }
     //     this.aggregatedReadResults = []
+
+    if (this.cliActions.length > 0) {
+      try {
+        await fetch("http://localhost:4500/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actions: this.cliActions })
+        });
+        console.log(`CLI ACTIONS: ${JSON.stringify(this.cliActions)}`)
+        logger.info(`[${MODULE}] CLI actions successfully forwarded to client IDE.`);
+      } catch (err: any) {
+        logger.error(`[${MODULE}] Failed to forward CLI actions to client IDE: ${err.message}`);
+      }
+    }
 
     return {
       sysResults: this.sysResults,

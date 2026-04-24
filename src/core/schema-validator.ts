@@ -4,6 +4,17 @@ import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger";
 
+
+type ActionType = "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG" | "WORKFLOW";
+
+interface Action {
+  type: ActionType;
+  target: string;
+  content?: string;
+}
+
+
+
 export class SchemaValidator {
   private static ajv = new Ajv({ allErrors: true }); // strict mode is on by default
   private static compiledSchemas: Record<string, ValidateFunction> = {};
@@ -11,6 +22,44 @@ export class SchemaValidator {
   // Add support for standard formats (including date-time)
   static {
     addFormats(this.ajv);
+  }
+
+  public static validateIntentResponse(raw: string): boolean {
+    // 1. Extract JSON block (first {...} found)
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return false;
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch {
+      return false;
+    }
+
+    // 2. Validate root
+    if (!Array.isArray(parsed.actions)) return false;
+
+    // 3. Validate actions
+    const validTypes: ActionType[] = [
+      "READ", "WRITE", "UPDATE", "DELETE", "SWITCH-AG", "WORKFLOW"
+    ];
+
+    if (parsed.actions.length > 0) {
+      for (const action of parsed.actions) {
+      if (!validTypes.includes(action.type)) return false;
+      if (typeof action.target !== "string") return false;
+
+      // content required only for WRITE and UPDATE
+      if (
+        (action.type === "WRITE" || action.type === "UPDATE") &&
+        typeof action.content !== "string"
+      ) {
+        return false;
+      }
+    }
+  }
+
+    return true;
   }
 
   private static loadSchema(schemaFile: string): ValidateFunction {
