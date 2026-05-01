@@ -109,7 +109,7 @@ export class Orchestrator {
         clientData = `
 # HERE is the CLIENT SIDE FILE STRUCTURE, if you need to perform actions on client side:
 \`\`\`
-${CLITree}
+${JSON.stringify(ProjectStateRepository.load(projectId).dynamicContext.fileTree)}
 \`\`\`
 # Here the paths with no extension '.' are just empty folders
 IF You want to acces or write in the client side, proide target path as CLI:<folder>/<filename>.extension
@@ -254,6 +254,7 @@ ${historyText}
       } else {
         try {
           this.context = ContextBuilder.getAgentPrompt("coding");
+          console.log("Entered Coding prompt")
         } catch (e) {
           logger.error(`[${MODULE}] Failed to load coding prompt: ${e}`);
           this.context = "You are a coding assistant.";
@@ -262,6 +263,9 @@ ${historyText}
         const structuredHistory = MemoryManager.getLastNConversationsStructured(projectId, 2);
 
         this.FullPrompt = `
+# Here is the file structure from the user's side
+${clientData}
+
 # This is your conversation history with the user:
 ${JSON.stringify(structuredHistory)}
 
@@ -270,8 +274,8 @@ ${JSON.stringify(structuredHistory)}
     "res": "DETAILED explanation, preview, confirmation request, or final response",
     "actions": [
         {
-            "type": "READ" | "WRITE" | "UPDATE" | "DELETE" | "SWITCH-AG" | "WORKFLOW",
-            "target": "CLI:<path>" | "SYS:docs/<filename>.md" | "<agent_name>" | "NEXT-STEP" | "<StepId>",
+            "type": "READ" | "WRITE" | "UPDATE" | "DELETE" ,
+            "target": "CLI:<path>",
             "content": "REQUIRED only for WRITE and UPDATE"
         }
     ]
@@ -285,21 +289,13 @@ ${JSON.stringify(structuredHistory)}
 ## WRITE / UPDATE
 - MUST include \`content\`
 - First give the preview of the content in \`res\` and ask for user confirmation before writing. For example, if you want to write a file, first show the content of the file in \`res\` and ask "Should I write this to <target>?". Only after receiving user confirmation, proceed with the WRITE action in the next response.
-- Any markdown documents you create must be stored at SYS:docs/<filename>.md. You can create subfolders in docs if needed. For example, SYS:docs/analysis/result.md
 - Any file you want to create on the user's side must be targeted as CLI:<path>. For example, CLI:src/utils/helper.js
 
 ## DELETE
 - MUST ask for confirmation BEFORE deleting any file. For example, "Are you sure you want to delete <target>? This action cannot be undone."
 
 ## READ
-- You can read any file from the system by specifying the target as SYS:docs/<filename>.md or from the user by specifying the target as CLI:<path>. For example, to read a file named "report.md" in the docs folder, your action would be: 
-
-## SWITCH-AG
-- Use this action to switch to a different agent. For example, if user want to switch to an agent named "architect", your action would be:
-- Only switch agent when user explicitly asks for it. NEVER switch agent without user request. For example, if user says "I want to talk to the architect now", then you can respond with a SWITCH-AG action targeting "architect". But if user just says "What do you think about this?", you should NOT switch agent even if architect agent might be better for answering that question.
-
-## WORKFLOW
-- To progress through the workflow to next step or user requested step, Then use type "WORKFLOW" and specify the target as "NEXT-STEP" or a specific StepId.
+- You can read any file from the system by specifying the target as  CLI:<path>. For example, to read a file named "report.md" in the docs folder, your action would be: 
 
 # Now respond to the user's message: 
 **${userInput}**`;
@@ -308,7 +304,7 @@ ${JSON.stringify(structuredHistory)}
         const stream = llmInstance.generate(
           projectId,
           {
-            systemPrompt: ContextBuilder.buildFullContext(projectId, currentStepID, agent) || "You are an assistant.",
+            systemPrompt: this.context || "You are an assistant.",
             userPrompt: this.FullPrompt,
           }
         );
@@ -319,6 +315,21 @@ ${JSON.stringify(structuredHistory)}
             fullResponse += chunk.res;
           }
         }
+        let actions: Action[] | null
+        actions = BaseActionEngine.getActions(fullResponse)
+        const executionResult = await BaseActionEngine.executeActions(projectId, actions)
+
+        // if (executionResult && executionResult.sysResults) {
+        //   const workflowSuccess = executionResult.sysResults.find(r => r.type === 'WORKFLOW' && r.content === 'SUCCESS');
+        //   if (workflowSuccess && depth < 5) {
+        //     logger.info(`[${MODULE}] AUTO-TRIGGERING NEXT AGENT DUE TO WORKFLOW SUCCESS at depth ${depth}`);
+        //     const triggerMsg = "[SYSTEM AUTO-TRIGGER]: Workflow advanced successfully. Your role and step may have changed. Please read the history, introduce yourself, state the goal of your new step, and begin the GATHER PHASE by asking the user the necessary questions.";
+        //     for await (const chunk of Orchestrator.handleUserInput(projectId, triggerMsg, llmInstance, true, depth + 1)) {
+        //       yield chunk;
+        //     }
+        //   }
+        // }
+
       }
 
 
@@ -326,25 +337,12 @@ ${JSON.stringify(structuredHistory)}
 
       await Promise.resolve(MemoryManager.addConversation(projectId, userInput, fullResponse, agent));
 
-      // let actions: Action[] | null
-      // actions = BaseActionEngine.getActions(fullResponse)
-      // const executionResult = await BaseActionEngine.executeActions(projectId, actions)
 
       systemStatuses.set(projectId, { object: "ORCHESTRATOR", message: "IDLE" });
 
 
       logger.info(`[${MODULE}] PROCESSING COMPLETED`);
 
-      // if (executionResult && executionResult.sysResults) {
-      //   const workflowSuccess = executionResult.sysResults.find(r => r.type === 'WORKFLOW' && r.content === 'SUCCESS');
-      //   if (workflowSuccess && depth < 5) {
-      //     logger.info(`[${MODULE}] AUTO-TRIGGERING NEXT AGENT DUE TO WORKFLOW SUCCESS at depth ${depth}`);
-      //     const triggerMsg = "[SYSTEM AUTO-TRIGGER]: Workflow advanced successfully. Your role and step may have changed. Please read the history, introduce yourself, state the goal of your new step, and begin the GATHER PHASE by asking the user the necessary questions.";
-      //     for await (const chunk of Orchestrator.handleUserInput(projectId, triggerMsg, llmInstance, true, depth + 1)) {
-      //       yield chunk;
-      //     }
-      //   }
-      // }
     } catch (error: any) {
       logger.error(`[${MODULE}] Processing failed: ${error.message}`);
       yield { res: `Error: ${error.message}`, done: true };

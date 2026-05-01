@@ -62,104 +62,104 @@ export class BaseActionEngine {
 
   // --- Utility Methods (unchanged) ---
   public static parseResponse(res: string): ActionResponse {
-  logger.debug(`[${MODULE}] Parsing LLM response...`);
+    logger.debug(`[${MODULE}] Parsing LLM response...`);
 
-  try {
-    const trimmed = res.trim();
-
-    // Strategy 1: Try to parse the whole trimmed string directly
     try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === "object") {
-        logger.debug(`[${MODULE}] Direct JSON parse succeeded.`);
-        return parsed as ActionResponse;
-      }
-    } catch {
-      // Not a valid JSON object – continue to fallback strategies
-    }
+      const trimmed = res.trim();
 
-    // Strategy 2: Extract JSON from markdown code blocks
-    const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)\n\s*```/g;
-    let match: RegExpExecArray | null;
-    while ((match = codeBlockRegex.exec(trimmed)) !== null) {
+      // Strategy 1: Try to parse the whole trimmed string directly
       try {
-        const parsed = JSON.parse(match[1].trim());
+        const parsed = JSON.parse(trimmed);
         if (parsed && typeof parsed === "object") {
-          logger.debug(`[${MODULE}] Extracted JSON from markdown code block.`);
+          logger.debug(`[${MODULE}] Direct JSON parse succeeded.`);
           return parsed as ActionResponse;
         }
       } catch {
-        // Continue searching for another code block
+        // Not a valid JSON object – continue to fallback strategies
       }
-    }
 
-    // Strategy 3: Find the first '{' or '[' and extract a balanced JSON object/array
-    const firstBraceIndex = trimmed.search(/[{\[]/);
-    if (firstBraceIndex !== -1) {
-      const jsonCandidate = this.extractBalancedJson(trimmed, firstBraceIndex);
-      if (jsonCandidate) {
+      // Strategy 2: Extract JSON from markdown code blocks
+      const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)\n\s*```/g;
+      let match: RegExpExecArray | null;
+      while ((match = codeBlockRegex.exec(trimmed)) !== null) {
         try {
-          const parsed = JSON.parse(jsonCandidate);
+          const parsed = JSON.parse(match[1].trim());
           if (parsed && typeof parsed === "object") {
-            logger.debug(`[${MODULE}] Extracted JSON using brace matching.`);
+            logger.debug(`[${MODULE}] Extracted JSON from markdown code block.`);
             return parsed as ActionResponse;
           }
         } catch {
-          // Not valid JSON – fall through
+          // Continue searching for another code block
+        }
+      }
+
+      // Strategy 3: Find the first '{' or '[' and extract a balanced JSON object/array
+      const firstBraceIndex = trimmed.search(/[{\[]/);
+      if (firstBraceIndex !== -1) {
+        const jsonCandidate = this.extractBalancedJson(trimmed, firstBraceIndex);
+        if (jsonCandidate) {
+          try {
+            const parsed = JSON.parse(jsonCandidate);
+            if (parsed && typeof parsed === "object") {
+              logger.debug(`[${MODULE}] Extracted JSON using brace matching.`);
+              return parsed as ActionResponse;
+            }
+          } catch {
+            // Not valid JSON – fall through
+          }
+        }
+      }
+
+      // If all strategies fail, throw an error
+      throw new Error("No valid JSON object found in response");
+    } catch (e: any) {
+      logger.error(`[${MODULE}] Failed to parse response: ${e.message}`);
+      throw new Error("Invalid JSON response");
+    }
+  }
+
+  /**
+   * Extract a balanced JSON string starting at the given index.
+   * Supports both objects `{...}` and arrays `[...]`.
+   */
+  static extractBalancedJson(str: string, startIdx: number): string | null {
+    const openChar = str[startIdx];
+    const closeChar = openChar === '{' ? '}' : (openChar === '[' ? ']' : null);
+    if (!closeChar) return null;
+
+    let balance = 0;
+    let inString = false;
+    let escape = false;
+
+    for (let i = startIdx; i < str.length; i++) {
+      const ch = str[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (ch === '\\') {
+        escape = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (ch === openChar) balance++;
+        if (ch === closeChar) balance--;
+
+        if (balance === 0) {
+          return str.substring(startIdx, i + 1);
         }
       }
     }
-
-    // If all strategies fail, throw an error
-    throw new Error("No valid JSON object found in response");
-  } catch (e: any) {
-    logger.error(`[${MODULE}] Failed to parse response: ${e.message}`);
-    throw new Error("Invalid JSON response");
+    return null;
   }
-}
-
-/**
- * Extract a balanced JSON string starting at the given index.
- * Supports both objects `{...}` and arrays `[...]`.
- */
- static extractBalancedJson(str: string, startIdx: number): string | null {
-  const openChar = str[startIdx];
-  const closeChar = openChar === '{' ? '}' : (openChar === '[' ? ']' : null);
-  if (!closeChar) return null;
-
-  let balance = 0;
-  let inString = false;
-  let escape = false;
-
-  for (let i = startIdx; i < str.length; i++) {
-    const ch = str[i];
-
-    if (escape) {
-      escape = false;
-      continue;
-    }
-
-    if (ch === '\\') {
-      escape = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
-
-    if (!inString) {
-      if (ch === openChar) balance++;
-      if (ch === closeChar) balance--;
-
-      if (balance === 0) {
-        return str.substring(startIdx, i + 1);
-      }
-    }
-  }
-  return null;
-}
 
   public static getActions(res: string | null): Action[] | null {
     if (!res) return null;
@@ -219,6 +219,9 @@ ${this.skippedSYSactions
 
     // Reset per‑cycle aggregation
     this.ReadResults = [];
+    this.cliActions = [];
+    this.sysResults = [];
+    this.skippedSYSactions = [];
 
     for (const act of actions) {
       try {
@@ -236,7 +239,8 @@ ${this.skippedSYSactions
           // CLI actions: encode and store separately
           if (parsedPath.device === "CLI") {
             const encodedAction: Action = {
-              ...act,
+              type: act.type,
+              target: parsedPath.path,
               content: Buffer.from(act.content || "").toString("base64"),
             };
             this.cliActions.push(encodedAction);

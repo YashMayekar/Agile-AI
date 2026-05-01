@@ -367,6 +367,7 @@ User already confirmed, but assistant regenerates:
             }
             fsTree = await res.json()
         }
+        console.log("Fetched file tree:", JSON.stringify(fsTree));
         const result: string[] = [];
         function traverse(node: FileTreeNode | undefined, currentPath: string) {
             if (!node) { return }
