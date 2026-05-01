@@ -159,6 +159,13 @@ Supports:
 - External models via adapters (e.g., Gemini)
 
 ---
+## 🖥️ Demo / Preview
+### System Document Creation
+<img width="1600" height="850" alt="image" src="https://github.com/user-attachments/assets/33359488-415e-49ad-93fa-7ac082a294d2" />
+
+### User Side Functions
+<img width="1920" height="1020" alt="image" src="https://github.com/user-attachments/assets/3c45eb31-dbfd-4bf6-b6ff-a75b89c5254f" />
+
 
 ## ⚙️ How It Works (Flow)
 
