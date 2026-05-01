@@ -33,24 +33,8 @@ It enables structured, iterative, and context-aware development by maintaining *
 ---
 
 ## 🏗️ Architecture Overview
+<img width="3003" height="1409" alt="Agile-System-Architecture" src="https://github.com/user-attachments/assets/4b232834-f4cb-4027-9fa1-562121eeac0f" />
 
-```
-
-User Input
-↓
-Orchestrator (Core Engine)
-↓
-Context Builder + Memory Manager
-↓
-Intent Analyzer → Action Engine
-↓
-LLM (Model-Agnostic Adapter)
-↓
-System / File Execution
-↓
-Updated State + Memory
-
-```
 
 ### Core Layers
 
