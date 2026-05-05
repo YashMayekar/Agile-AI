@@ -27,6 +27,8 @@ export class Orchestrator {
   private static currentWorkflow: WorkflowStep | null = null;
   private static state: any = null;
   private static ExecutionLock: boolean = false; // if true, only one agent can run at a time, no auto-triggering of next agent
+  private static LastAgent: string = "";
+  private static LastStepName: string = "";
 
   static async *handleUserInput(
     projectId: string,
@@ -51,6 +53,9 @@ export class Orchestrator {
       try {
         WorkflowEngine.loadWorkflow(workflowFile)
         this.currentWorkflow = WorkflowEngine.getStepById(currentStepID)
+        this.LastAgent = this.currentWorkflow?.agent;
+        this.LastStepName = this.currentWorkflow?.name;
+
       } catch (e) {
         logger.error(`[${MODULE}] Error in loading worlflow step: ${e}`)
       }
@@ -60,7 +65,7 @@ export class Orchestrator {
           throw new Error("Workflow step not found");
           // Error handling needs to be implemented...
         }
-        agent = this.currentWorkflow.agent;
+        agent = this.LastAgent;
         if (this.currentWorkflow.creates) {
           for (const file of this.currentWorkflow.creates) {
             if (!this.state.documents[file]) {
@@ -231,11 +236,18 @@ ${historyText}
           this.context = "You are a coding assistant.";
         }
 
+        this.state = ProjectStateRepository.load(projectId);
+        this.state.systemStatus = `Executing User Request in coding agent`;
+        this.state.currentStepName = "Executing User Request";
+        this.state.currentAgent = "coding";
+        this.state.phase = "coding";
+        StateManager.save(projectId, this.state);
+        
         const structuredHistory = MemoryManager.getLastNConversationsStructured(projectId, 2);
 
         this.FullPrompt = `
 # Here is the file structure from the user's side
-${clientData}
+${ContextBuilder.getClientFS(projectId)}
 
 # This is your conversation history with the user:
 ${JSON.stringify(structuredHistory)}
@@ -350,7 +362,7 @@ ${JSON.stringify(structuredHistory)}
 
     this.state.systemStatus = this.currentWorkflow ? `Executing step: ${this.currentWorkflow.name}` : "Executing step";
     this.state.currentAgent = this.currentWorkflow?.agent || this.state.currentAgent;
-    this.state.currentStepName = this.currentWorkflow?.name || this.state.currentStepName;
+    this.state.currentStepName = this.LastStepName;
     StateManager.save(projectId, this.state);
     try {
       if (!this.currentWorkflow) {

@@ -367,6 +367,10 @@ User already confirmed, but assistant regenerates:
             }
             fsTree = await res.json()
         }
+        // write the fetched file tree into the state for future use
+        const projectState = ProjectStateRepository.load(projectId);
+        projectState.dynamicContext.fileTree = fsTree;
+        ProjectStateRepository.save(projectId, projectState);
         console.log("Fetched file tree:", JSON.stringify(fsTree));
         const result: string[] = [];
         function traverse(node: FileTreeNode | undefined, currentPath: string) {

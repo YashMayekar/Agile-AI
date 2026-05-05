@@ -198,8 +198,8 @@ router.post("/:projectId/m/s", async (req, res) => {
       if (chunk.res || chunk.think) {
         const out: any = {};
         if (chunk.res) {
-          // out.res = parser1.parse(chunk.res)
-          out.res = chunk.res
+          out.res = parser1.parse(chunk.res)
+          // out.res = chunk.res
         };
         if (chunk.think) out.think = chunk.think;
         writeChunk(out);
