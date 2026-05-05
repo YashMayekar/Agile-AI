@@ -166,36 +166,7 @@ Before generating or reading files in the system check if its present in the abo
           actions = BaseActionEngine.getActions(intent);
           const executionResult = await BaseActionEngine.executeActions(projectId, actions);
         }
-        // if (lastAssistantMessage) {
-        //   const MAX_ATTEMPTS = 0;
-        //   let attempt = 0;
-        //   let isValid = false;
-
-        //   while (attempt < MAX_ATTEMPTS && !isValid) {
-
-        //     isValid = SchemaValidator.validateIntentResponse(intent);
-
-        //     if (!isValid) {
-        //       logger.warn(
-        //         `[${MODULE}] Intent schema validation failed (attempt ${attempt + 1}). Intent: ${intent}`
-        //       );
-        //     }
-
-        //     attempt++;
-        //   }
-
-        //   if (isValid) {
-        //   } else {
-        //     logger.error(
-        //       `[${MODULE}] Intent failed schema validation after ${MAX_ATTEMPTS} attempts. Skipping execution.`
-        //     );
-        //   }
-
-        // } else {
-        //   logger.warn(
-        //     `[${MODULE}] No assistant message found in history, intent detection might be inaccurate.`
-        //   );
-        // }
+        
 
         let data = "";
         if (this.currentWorkflow?.requires) {
