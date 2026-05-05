@@ -53,9 +53,10 @@ export class Orchestrator {
       try {
         WorkflowEngine.loadWorkflow(workflowFile)
         this.currentWorkflow = WorkflowEngine.getStepById(currentStepID)
-        this.LastAgent = this.currentWorkflow?.agent;
-        this.LastStepName = this.currentWorkflow?.name;
-
+        this.state.currentAgent = this.currentWorkflow?.agent;
+        this.state.currentStepName = this.currentWorkflow?.name;
+        this.state.systemStatus = `Executing step: ${this.currentWorkflow?.name || "Unknown Step"}`;
+        ProjectStateRepository.save(projectId, this.state);
       } catch (e) {
         logger.error(`[${MODULE}] Error in loading worlflow step: ${e}`)
       }
@@ -65,7 +66,7 @@ export class Orchestrator {
           throw new Error("Workflow step not found");
           // Error handling needs to be implemented...
         }
-        agent = this.LastAgent;
+        agent = this.state.currentAgent || this.currentWorkflow.agent;
         if (this.currentWorkflow.creates) {
           for (const file of this.currentWorkflow.creates) {
             if (!this.state.documents[file]) {
