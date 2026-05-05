@@ -73,7 +73,7 @@ async function handleMessage(text: string, planning: boolean, projectId: string,
           if (chunk.res !== null && chunk.res !== undefined) {
             accumulatedMessage += chunk.res;
           }
-          
+
           if (chunk.think !== null && chunk.think !== undefined) {
             accumulatedThought += chunk.think;
           }
@@ -361,31 +361,43 @@ function startTreeServer(context: vscode.ExtensionContext) {
       req.on('data', (chunk: any) => { body += chunk.toString(); });
       req.on('end', async () => {
         try {
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (!workspaceFolders || workspaceFolders.length === 0) {
+            throw new Error('No workspace folder open');
+          }
+          const rootPath = workspaceFolders[0].uri.fsPath;
+
           const payload = JSON.parse(body);
           if (payload && Array.isArray(payload.actions)) {
             for (const action of payload.actions) {
+              let targetPath = action.target;
+              if (!path.isAbsolute(targetPath)) {
+                targetPath = path.join(rootPath, targetPath);
+              }
+
               if (action.type === "WRITE" || action.type === "UPDATE") {
                 const choice = await vscode.window.showInformationMessage(
-                  `Allow AI to write to ${action.target}?`,
+                  `Allow AI to write to ${targetPath}?`,
                   { modal: true },
                   "Approve", "Reject"
                 );
                 if (choice === "Approve") {
-                  const dir = path.dirname(action.target);
+                  const dir = path.dirname(targetPath);
                   await fs.promises.mkdir(dir, { recursive: true });
-                  await fs.promises.writeFile(action.target, action.content || '', 'utf8');
-                  vscode.window.showInformationMessage(`Successfully updated ${path.basename(action.target)}`);
+                  const decodedContent = Buffer.from(action.content || '', 'base64').toString('utf8');
+                  await fs.promises.writeFile(targetPath, decodedContent, 'utf8');
+                  vscode.window.showInformationMessage(`Successfully updated ${path.basename(targetPath)}`);
                 }
               } else if (action.type === "DELETE") {
                 const choice = await vscode.window.showWarningMessage(
-                  `Allow AI to delete ${action.target}?`,
+                  `Allow AI to delete ${targetPath}?`,
                   { modal: true },
                   "Approve", "Reject"
                 );
                 if (choice === "Approve") {
-                  if (fs.existsSync(action.target)) {
-                    await fs.promises.unlink(action.target);
-                    vscode.window.showInformationMessage(`Successfully deleted ${path.basename(action.target)}`);
+                  if (fs.existsSync(targetPath)) {
+                    await fs.promises.unlink(targetPath);
+                    vscode.window.showInformationMessage(`Successfully deleted ${path.basename(targetPath)}`);
                   }
                 }
               }
@@ -513,7 +525,7 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
     'chatPanel',
     `Chat ${projectId.slice(0, 6)}`,
     vscode.ViewColumn.One,
-    { 
+    {
       enableScripts: true,
       retainContextWhenHidden: true  // 🟢 Critical: keep webview state when hidden
     }
