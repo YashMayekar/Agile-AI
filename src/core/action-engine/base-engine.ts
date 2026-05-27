@@ -39,7 +39,8 @@ export interface ActionHandler {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): void | Promise<void>;
 }
 
@@ -210,7 +211,7 @@ ${this.skippedSYSactions
   }
 
   // --- Execution Orchestration ---
-  public static async executeActions(projectId: string, actions: Action[] | null): Promise<ExecutionResult> {
+  public static async executeActions(projectId: string, actions: Action[] | null, signal?: AbortSignal): Promise<ExecutionResult> {
     let readActionEncountered = false
     if (!actions) {
       logger.warn(`[${MODULE}] No actions to execute`);
@@ -224,6 +225,10 @@ ${this.skippedSYSactions
     this.skippedSYSactions = [];
 
     for (const act of actions) {
+      if (signal?.aborted) {
+        logger.warn(`[${MODULE}] Actions execution aborted for project ${projectId}`);
+        throw new Error("Aborted by user or system");
+      }
       try {
 
         let safePath = ""
@@ -275,7 +280,7 @@ ${this.skippedSYSactions
           aggregatedReadResults: this.ReadResults,
           sysResults: this.sysResults,
           cliActions: this.cliActions,
-        });
+        }, signal);
       } catch (err: any) {
         logger.error(`[${MODULE}] Action failed: ${err.message}`);
       }
@@ -305,16 +310,26 @@ ${this.skippedSYSactions
     //     }
     //     this.aggregatedReadResults = []
 
+    if (signal?.aborted) {
+      logger.warn(`[${MODULE}] Actions execution aborted before forwarding to client IDE`);
+      throw new Error("Aborted by user or system");
+    }
+
     if (this.cliActions.length > 0) {
       try {
         await fetch("http://localhost:4500/actions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ actions: this.cliActions })
+          body: JSON.stringify({ actions: this.cliActions }),
+          signal
         });
         console.log(`CLI ACTIONS: ${JSON.stringify(this.cliActions)}`)
         logger.info(`[${MODULE}] CLI actions successfully forwarded to client IDE.`);
       } catch (err: any) {
+        if (err.name === 'AbortError' || signal?.aborted) {
+          logger.warn(`[${MODULE}] CLI actions forwarding aborted.`);
+          throw new Error("Aborted by user or system");
+        }
         logger.error(`[${MODULE}] Failed to forward CLI actions to client IDE: ${err.message}`);
       }
     }

@@ -1,6 +1,6 @@
 import { ProjectState } from "./project-state/project-state.model";
 import { ProjectStateRepository } from "./project-state/project-state.repository";
-import { logEvent, logger } from "../utils/logger";
+import { logger } from "../utils/logger";
 import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
 import path from "path/win32";
 import { promises as fs } from "fs";
@@ -11,9 +11,13 @@ const MODULE = "state-manager.ts";
 export class StateManager {
   static load(projectId: string): ProjectState {
     logger.debug(`[${MODULE}] Loading state for project: ${projectId}`);
-    const state = ProjectStateRepository.load(projectId);
+    const state = ProjectStateRepository.load(projectId) || null;
     logger.debug(`[${MODULE}] State loaded successfully`);
-    return state;
+    if (state) {
+      logger.warn(`[${MODULE}] No existing state found for project ${projectId}. Initializing new state.`);
+      return state;
+    }
+    return undefined as unknown as ProjectState; // or throw an error if you prefer
   }
 
   static save(projectId: string, state: ProjectState) {
@@ -31,7 +35,7 @@ export class StateManager {
 //       version: (state.documents[resolvedName]?.version || 0) + 1,
 //       updatedAt: new Date().toISOString()
 //     };
-//     logEvent("DOCUMENT_UPDATED", { projectId: state.projectId, docName: resolvedName });
+//     logger.debug("DOCUMENT_UPDATED", { projectId: state.projectId, docName: resolvedName });
 //     return state;
 //   }
 
@@ -96,7 +100,7 @@ export class StateManager {
 //       state.dynamicContext.stories = agentOutput.stories;
 //       state.dynamicContext.currentStoryIndex = 0;
 //       logger.info(`[${MODULE}] Populated ${agentOutput.stories.length} stories from step 7`);
-//       logEvent("STORIES_POPULATED", {
+//       logger.debug("STORIES_POPULATED", {
 //         projectId: state.projectId,
 //         count: agentOutput.stories.length
 //       });

@@ -3,7 +3,6 @@ import { logger } from "../../utils/logger";
 import { Action, ActionHandler } from "./base-engine";
 import { ProjectStateRepository } from "../project-state/project-state.repository";
 import { OllamaAdapter } from "../../llm/ollama.adapter";
-import { GeminiAdapter } from "../../llm/gemini.adapter";
 import { systemStatuses } from "../../api/project.controller";
 
 const MODULE = "write.action.ts";
@@ -17,7 +16,8 @@ export class WriteHandler implements ActionHandler {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): Promise<void> {
     logger.info(`[${MODULE}] Writing ${safePath}`);
 
@@ -31,7 +31,7 @@ export class WriteHandler implements ActionHandler {
       }
       fs.writeFileSync(safePath, action.content);
       systemStatuses.set(projectId, { object: "", message: "WRITE_SUCCESS: " + safePath });
-      state = ProjectStateRepository.load(projectId);
+      state = ProjectStateRepository.load(projectId) || {};
       // get filename
       const filename = safePath.split('\\').pop() || "";
       const new_version = state.documents[filename] ? state.documents[filename].version + 1 : 1;
@@ -51,7 +51,7 @@ export class WriteHandler implements ActionHandler {
       try {
         const llm = new OllamaAdapter();
         // const llm = new GeminiAdapter();
-        const detected = await llm.GetWorkFlowType(projectId, action.content);
+        const detected = await llm.GetWorkFlowType(projectId, action.content, { signal });
         let workflowFile = "greenfield.yaml";
         console.log(`Detected workflow type: ${detected}`);
         if (detected.includes("greenfield.yaml") && !detected.includes("brownfield.yaml")) {
@@ -64,9 +64,11 @@ export class WriteHandler implements ActionHandler {
 
         if (workflowFile) {
           try {
-            const state = ProjectStateRepository.load(projectId);
+            const state = ProjectStateRepository.load(projectId)  || null;
+            if (state) {
             state.workflowFile = workflowFile;
             ProjectStateRepository.save(projectId, state);
+            }
             resultContent = `SUCCESS_WORKFLOW_${workflowFile}`;
             logger.info(`[${MODULE}] Saved detected workflow ${workflowFile} to state.json for project ${projectId}`);
           } catch (err: any) {

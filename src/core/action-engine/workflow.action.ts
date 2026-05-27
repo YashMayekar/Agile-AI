@@ -15,13 +15,14 @@ export class WorkflowHandler implements ActionHandler {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): void {
     logger.info(`[${MODULE}] Executing workflow action ${action.target} for ${projectId}`);
 
     let state: any;
     try {
-      state = ProjectStateRepository.load(projectId);
+      state = ProjectStateRepository.load(projectId) ||{};
     } catch (e: any) {
       logger.error(`[${MODULE}] Failed to load project state: ${e?.message || e}`);
       context.sysResults.push({ type: "WORKFLOW", target: action.target, content: "WORFLOW_LOAD_ERROR" });

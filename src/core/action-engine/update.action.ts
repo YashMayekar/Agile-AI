@@ -13,7 +13,8 @@ export class UpdateHandler implements ActionHandler {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): void {
     
     logger.info(`[${MODULE}] UPDATE intercepted → forcing READ first`);

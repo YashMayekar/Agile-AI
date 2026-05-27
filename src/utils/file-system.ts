@@ -5,22 +5,21 @@
  */
 
 import fs from "fs";
-import path from "path";
-import { logEvent } from "./logger";
+import { logger } from "./logger";
 
 export class FileSystem {
 
   static ensureDir(dirPath: string) {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
-      logEvent("DIR_CREATED", { dirPath });
+      logger.debug("DIR_CREATED", { dirPath });
     }
   }
 
   static deleteDir(dirPath: string) {
     if (fs.existsSync(dirPath)) {
       fs.rmSync(dirPath, { recursive: true, force: true });
-      logEvent("DIR_DELETED", { dirPath });
+      logger.debug("DIR_DELETED", { dirPath });
     }
   }
 
@@ -35,12 +34,12 @@ export class FileSystem {
 
   static writeJSON(filePath: string, data: any) {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    logEvent("FILE_WRITTEN", { filePath });
+    logger.debug("FILE_WRITTEN", { filePath });
   }
 
   static writeFile(filePath: string, content: string) {
     fs.writeFileSync(filePath, content);
-    logEvent("FILE_CREATED_OR_UPDATED", { filePath });
+    logger.debug("FILE_CREATED_OR_UPDATED", { filePath });
   }
 
   static exists(filePath: string) {

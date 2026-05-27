@@ -13,7 +13,8 @@ export class ReadHandler implements ActionHandler, BaseActionEngine {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): void {
     logger.info(`[${MODULE}] Reading ${safePath}`);
 

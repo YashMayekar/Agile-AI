@@ -15,7 +15,8 @@ export class DeleteHandler implements ActionHandler {
       aggregatedReadResults: { target: string; content: string }[];
       sysResults: Action[];
       cliActions: Action[];
-    }
+    },
+    signal?: AbortSignal
   ): void {
     
     logger.info(`[${MODULE}] Deleting ${safePath}`);

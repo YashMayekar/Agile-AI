@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: agile-ai-backend
+    container_name: agile-ai-backend
+
+    ports:
+      - "4000:4000"
+
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - OLLAMA_URL=http://localhost:11434
+
+    volumes:
+      # Persist project data outside container
+      - ./projects:/app/projects
+
+      # Persist logs outside container
+      - ./logs:/app/logs
+
+    restart: unless-stopped
+
+    # optional: better logging visibility
+    tty: true
+    stdin_open: true

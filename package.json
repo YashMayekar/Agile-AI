@@ -5,11 +5,11 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "cpx \"src/workflows/**/*\" dist/workflows && cpx \"src/schemas/**/*\" dist/schemas && cpx \"src/templates/**/*\" dist/templates && cpx \"src/agents/prompts/**/*\" dist/agents/prompts",
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "ajv": "^8.12.0",
     "ajv-formats": "^3.0.1",
     "axios": "^1.6.0",
@@ -24,6 +24,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.5.0",
     "@types/uuid": "^10.0.0",
+    "cpx": "^1.5.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.0"
   }

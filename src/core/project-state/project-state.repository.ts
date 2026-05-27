@@ -22,8 +22,13 @@ export class ProjectStateRepository {
       return path.join("projects", projectId, "history.json");
   } 
 
-  static load(projectId: string): ProjectState {
-    return FileSystem.readJSON(this.getStatePath(projectId));
+  static load(projectId: string): ProjectState | null {
+    if (!FileSystem.exists(this.getStatePath(projectId))) {
+      logger.warn(`No existing state found for project ${projectId}. Initializing new state.`); 
+      return null;
+    } else { 
+      return FileSystem.readJSON(this.getStatePath(projectId)); 
+    } 
   }
 
   static save(projectId: string, state: ProjectState) {
