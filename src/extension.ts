@@ -10,6 +10,9 @@ let serverPort: number | null = null;
 const panelToProjectId = new Map<vscode.WebviewPanel, string>();
 // Reverse map to quickly find an existing panel for a projectId
 let projectIdToPanel = new Map<string, vscode.WebviewPanel>();
+// Map to store AbortController per panel for current request
+const panelToAbortController = new Map<vscode.WebviewPanel, AbortController>();
+
 let globalContext: vscode.ExtensionContext;
 
 // Helper to clean up maps when a panel is disposed
@@ -21,6 +24,17 @@ function setupPanelDisposal(panel: vscode.WebviewPanel, projectId: string) {
 }
 
 async function handleMessage(text: string, planning: boolean, projectId: string, panel: vscode.WebviewPanel) {
+  // Create AbortController for this request
+  const abortController = new AbortController();
+  panelToAbortController.set(panel, abortController);
+  const signal = abortController.signal;
+
+  // Helper to clean up controller and notify UI that processing ended
+  const cleanup = () => {
+    panelToAbortController.delete(panel);
+    panel.webview.postMessage({ type: 'processingEnded' });
+  };
+
   try {
     const response = await fetch(`http://localhost:4000/api/project/${projectId}/m/s`, {
       method: 'POST',
@@ -105,10 +119,20 @@ async function handleMessage(text: string, planning: boolean, projectId: string,
       }
     }
   } catch (err: any) {
-    panel.webview.postMessage({
-      type: 'error',
-      message: `❌ Error: ${err.message}`
-    });
+    if (err.name === 'AbortError') {
+      // Request was aborted – send a cancellation message to the webview
+      panel.webview.postMessage({
+        type: 'error',
+        message: '⏹️ Message generation was cancelled.'
+      });
+    } else {
+      panel.webview.postMessage({
+        type: 'error',
+        message: `❌ Error: ${err.message}`
+      });
+    }
+  } finally {
+    cleanup();
   }
 
   // Update local cache after message exchange is completed
@@ -148,7 +172,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Create panel with a temporary title
         const tempProjectId = "loading...";
         const panel = createChatPanel(context.extensionUri, tempProjectId);
-        panel.title = `Chat (initializing)`;
+        panel.title = `initializing...`;
         panelToProjectId.set(panel, tempProjectId);
         projectIdToPanel.set(tempProjectId, panel);
         setupPanelDisposal(panel, tempProjectId); // will be updated later
@@ -211,7 +235,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Send initial greeting message to the LLM
         try {
-          await handleMessage("Hello", true, projectId, panel);
+          await handleMessage("Hello, describe yourself in short and use more emojis! show enthusiasm!", true, projectId, panel);
         } catch (err) {
           console.error('Failed to send greeting:', err);
           panel.webview.postMessage({
@@ -331,6 +355,16 @@ export function activate(context: vscode.ExtensionContext) {
       savedChats = savedChats.filter(c => c.id !== projectId);
       context.workspaceState.update('savedChats', savedChats);
       context.workspaceState.update(`chat_history_${projectId}`, undefined);
+
+      let panel = projectIdToPanel.get(projectId);
+        if (panel && panelToProjectId.get(panel) === projectId) {
+          // Just reveal the existing panel
+          
+          panel.dispose();
+          panelToProjectId.delete(panel);
+          projectIdToPanel.delete(projectId);
+      }
+      
       sidebarProvider.refresh();
 
       try {
@@ -550,6 +584,30 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
       }
       await handleMessage(msg.text, msg.planning === true, realProjectId, panel);
     }
+
+    // New: handle abort message
+    else if (msg.command === 'abortMessage') {
+
+    const realProjectId = panelToProjectId.get(panel);
+    const response = await fetch(`http://localhost:4000/api/project/${realProjectId}/abort`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId:  realProjectId }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP error ${response.status}`);
+    }
+
+      const abortController = panelToAbortController.get(panel);
+      if (abortController) {
+        abortController.abort();
+        panelToAbortController.delete(panel);
+        // Optionally send immediate UI reset
+        panel.webview.postMessage({ type: 'processingEnded' });
+      }
+    }
+
   });
 
   // Start status polling
@@ -574,6 +632,12 @@ function createChatPanel(extensionUri: vscode.Uri, projectId: string): vscode.We
 
   panel.onDidDispose(() => {
     clearInterval(statusInterval);
+    // Abort any ongoing request when panel is closed
+    const abortController = panelToAbortController.get(panel);
+    if (abortController) {
+      abortController.abort();
+      panelToAbortController.delete(panel);
+    }
   });
 
   return panel;

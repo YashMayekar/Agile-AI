@@ -11,33 +11,28 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@350;450;550;650&family=JetBrains+Mono:wght@400;500&display=swap');
 
-:root {
-  --bg-primary: #05070f;
-  --bg-secondary: #0a0f1f;
-  --bg-tertiary: #0f1633;
-  --bg-elevated: #0e1431;
-
-  --accent-primary: #8942fa;
-  --accent-secondary: #b153fe;
-  --accent-tertiary: #d13afb;
-  --accent-gradient: linear-gradient(135deg, #8942fa, #b153fe, #d13afb);
-
-  --text-primary: #e6f0ff;
-  --text-secondary: #9fb3d9;
-  --text-tertiary: #5c6f99;
-
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-focus: rgba(137, 66, 250, 0.4);
-
-  --bubble-user-bg: rgba(137, 66, 250, 0.15);
-  --bubble-user-border: rgba(137, 66, 250, 0.3);
-  --bubble-assistant-bg: rgba(255, 255, 255, 0.05);
-  --bubble-assistant-border: rgba(255, 255, 255, 0.1);
-
-  --shadow-glow: 0 0 28px rgba(137, 66, 250, 0.45);
-  --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.6);
-}
+    :root {
+      --bg-primary: #05070f;
+      --bg-secondary: #0a0f1f;
+      --bg-tertiary: #0f1633;
+      --bg-elevated: #0e1431;
+      --accent-primary: #8942fa;
+      --accent-secondary: #b153fe;
+      --accent-tertiary: #d13afb;
+      --accent-gradient: linear-gradient(135deg, #8942fa, #b153fe, #d13afb);
+      --text-primary: #e6f0ff;
+      --text-secondary: #9fb3d9;
+      --text-tertiary: #5c6f99;
+      --border-subtle: rgba(255, 255, 255, 0.05);
+      --border-default: rgba(255, 255, 255, 0.1);
+      --border-focus: rgba(137, 66, 250, 0.4);
+      --bubble-user-bg: rgba(137, 66, 250, 0.15);
+      --bubble-user-border: rgba(137, 66, 250, 0.3);
+      --bubble-assistant-bg: rgba(255, 255, 255, 0.05);
+      --bubble-assistant-border: rgba(255, 255, 255, 0.1);
+      --shadow-glow: 0 0 28px rgba(137, 66, 250, 0.45);
+      --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.6);
+    }
 
     * {
       box-sizing: border-box;
@@ -56,7 +51,6 @@
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Subtle grid pattern overlay with purple tint */
     body::before {
       content: '';
       position: fixed;
@@ -134,7 +128,6 @@
       font-weight: 450;
     }
 
-    /* Thoughts Box - Floating over chat */
     .thoughts-box {
       position: absolute;
       top: 2vh;
@@ -209,7 +202,7 @@
 
     .thoughts-box.expanded .thoughts-content {
       display: block;
-      animation: slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1); /*is this line causing issues?*/ 
+      animation: slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     @keyframes slide-down {
@@ -348,7 +341,6 @@
       margin: 4px 0;
     }
 
-    /* Modern Loading Animation */
     .loader {
       display: flex;
       align-items: center;
@@ -458,6 +450,11 @@
       overflow: hidden;
     }
 
+    button.send.abort {
+      background: linear-gradient(135deg, #f56565, #ed8936);
+      box-shadow: 0 4px 20px rgba(245, 101, 101, 0.35);
+    }
+
     button.send::after {
       content: '';
       position: absolute;
@@ -468,6 +465,10 @@
     button.send:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 28px rgba(124, 92, 255, 0.5);
+    }
+
+    button.send.abort:hover {
+      box-shadow: 0 6px 28px rgba(245, 101, 101, 0.5);
     }
 
     button.send:active {
@@ -509,13 +510,11 @@
       color: var(--text-primary);
     }
 
-    /* Status Message Styling */
     .status-text {
       color: var(--accent-secondary);
       font-style: italic;
     }
 
-    /* Empty State */
     .empty-state {
       text-align: center;
       padding: 60px 20px;
@@ -523,7 +522,6 @@
       font-size: 14px;
     }
 
-    /* Responsive */
     @media (max-width: 640px) {
       .container {
         padding: 16px;
@@ -599,7 +597,6 @@
       </div>
       <div class="thoughts-content" id="thoughtsContent"></div>
     </div>
-    
 
     <div id="chat" class="chat-panel"></div>
 
@@ -648,26 +645,43 @@
     let autoScrollEnabled = true;
     let thoughtsAutoScrollEnabled = true;
 
-    document.getElementById('thoughtsHeader').onclick = function() {
-      thoughtsBox.classList.toggle('expanded');
-      const toggle = document.getElementById('thoughtsToggle');
-      if (thoughtsBox.classList.contains('expanded')) {
-        toggle.textContent = '▲';
-        thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
+    // New: processing state for abort button
+    let isProcessing = false;
+
+    const sendButton = document.getElementById('send');
+    const inputArea = document.getElementById('input');
+    const modeSelect = document.getElementById('Mode');
+
+    function setProcessingState(processing) {
+      isProcessing = processing;
+      if (isProcessing) {
+        sendButton.classList.add('abort');
+        sendButton.innerHTML = `
+          Abort
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+          </svg>
+        `;
+        inputArea.disabled = true;
+        modeSelect.disabled = true;
       } else {
-        toggle.textContent = '▼';
+        sendButton.classList.remove('abort');
+        sendButton.innerHTML = `
+          Send
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        `;
+        inputArea.disabled = false;
+        modeSelect.disabled = false;
+        inputArea.focus();
       }
-    };
-
-    chat.addEventListener('scroll', () => {
-      const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 20;
-      autoScrollEnabled = isNearBottom;
-    });
-
-    thoughtsContent.addEventListener('scroll', () => {
-      const isNearBottom = thoughtsContent.scrollHeight - thoughtsContent.scrollTop - thoughtsContent.clientHeight < 20;
-      thoughtsAutoScrollEnabled = isNearBottom;
-    });
+    }
 
     function renderMessageText(text) {
       if (!text) return '';
@@ -738,9 +752,47 @@
       }
     }
 
-    document.getElementById('send').onclick = () => {
-      const input = document.getElementById('input');
-      const val = input.value.trim();
+    // Thoughts box toggle
+    document.getElementById('thoughtsHeader').onclick = function() {
+      thoughtsBox.classList.toggle('expanded');
+      const toggle = document.getElementById('thoughtsToggle');
+      if (thoughtsBox.classList.contains('expanded')) {
+        toggle.textContent = '▲';
+        thoughtsContent.scrollTop = thoughtsContent.scrollHeight;
+      } else {
+        toggle.textContent = '▼';
+      }
+    };
+
+    chat.addEventListener('scroll', () => {
+      const isNearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 20;
+      autoScrollEnabled = isNearBottom;
+    });
+
+    thoughtsContent.addEventListener('scroll', () => {
+      const isNearBottom = thoughtsContent.scrollHeight - thoughtsContent.scrollTop - thoughtsContent.clientHeight < 20;
+      thoughtsAutoScrollEnabled = isNearBottom;
+    });
+
+    sendButton.onclick = () => {
+      if (isProcessing) {
+        // Abort current request
+        vscode.postMessage({ command: 'abortMessage' });
+        setProcessingState(false);
+        // Clear status messages
+        if (statusIntervalId) {
+          clearInterval(statusIntervalId);
+          statusIntervalId = null;
+        }
+        if (currentSystemMessageDiv) {
+          currentSystemMessageDiv.remove();
+          currentSystemMessageDiv = null;
+        }
+        addMessage('assistant', '⏹️ Message generation was cancelled.', false);
+        return;
+      }
+
+      const val = inputArea.value.trim();
       if (!val) return;
 
       autoScrollEnabled = true;
@@ -764,34 +816,56 @@
       }
       lastStatusStr = '';
 
-      const mode = document.getElementById('Mode').value;
+      const mode = modeSelect.value;
       vscode.postMessage({
         command: 'sendMessage',
         text: val,
         planning: mode === 'planning'
       });
 
-      input.value = '';
-      input.style.height = 'auto';
+      inputArea.value = '';
+      inputArea.style.height = 'auto';
+      setProcessingState(true);
     };
 
-    document.getElementById('input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+    inputArea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !isProcessing) {
         e.preventDefault();
-        document.getElementById('send').click();
+        sendButton.click();
       }
     });
 
-    document.getElementById('input').addEventListener('input', function() {
+    inputArea.addEventListener('input', function() {
       this.style.height = 'auto';
       this.style.height = Math.min(this.scrollHeight, 200) + 'px';
     });
 
     window.addEventListener('message', e => {
       const msg = e.data;
+
+      // When processing ends (by completion or abort), reset button
+      if (msg.type === 'processingEnded') {
+        setProcessingState(false);
+      }
+
       if (msg.type === 'addMessage') {
         addMessage(msg.sender, msg.message, false);
       } else if (msg.type === 'botChunk') {
+
+        isProcessing = true;
+        sendButton.classList.add('abort');
+        sendButton.innerHTML = `
+          Abort
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+          </svg>
+        `;
+        inputArea.disabled = true;
+        modeSelect.disabled = true;
+
         if (!currentAssistantMessageDiv && !msg.chunk) {
           if (!currentSystemMessageDiv) {
             currentSystemMessageDiv = document.createElement('div');
@@ -905,15 +979,20 @@
         if (msg.actions) {
           console.log('Actions:', msg.actions);
         }
-      } else if (msg.type === 'error') {
-        if (statusIntervalId) {
-          clearInterval(statusIntervalId);
-          statusIntervalId = null;
+        // After final message, reset processing state (extension will also send processingEnded)
+        setProcessingState(false);
+        if (statusIntervalId) clearInterval(statusIntervalId);
+        if (currentSystemMessageDiv) {
+          currentSystemMessageDiv.remove();
+          currentSystemMessageDiv = null;
         }
+      } else if (msg.type === 'error') {
+        setProcessingState(false);
         addMessage('assistant', `❌ ${msg.message}`, false);
         currentAssistantMessageDiv = null;
         currentAssistantMessageContent = '';
       } else if (msg.type === 'clearMessages') {
+        setProcessingState(false);
         if (statusIntervalId) {
           clearInterval(statusIntervalId);
           statusIntervalId = null;
