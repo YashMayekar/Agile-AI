@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   backend:
     build:
@@ -15,17 +13,14 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=4000
-      - OLLAMA_URL=http://localhost:11434
+      - OLLAMA_URL=http://host.docker.internal:11434
+      # host.docker.internal allows the container to access services running on the host machine, such as the Ollama server.
 
     volumes:
-      # Persist project data outside container
       - ./projects:/app/projects
-
-      # Persist logs outside container
       - ./logs:/app/logs
 
     restart: unless-stopped
 
-    # optional: better logging visibility
     tty: true
     stdin_open: true
