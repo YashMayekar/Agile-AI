@@ -51,7 +51,7 @@ export class WriteHandler implements ActionHandler {
       try {
         const llm = new OllamaAdapter();
         // const llm = new GeminiAdapter();
-        const detected = await llm.GetWorkFlowType(projectId, action.content, { signal });
+        const detected = await llm.GetWorkFlowType(projectId, action.content);
         let workflowFile = "greenfield.yaml";
         console.log(`Detected workflow type: ${detected}`);
         if (detected.includes("greenfield.yaml") && !detected.includes("brownfield.yaml")) {
