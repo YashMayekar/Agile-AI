@@ -224,11 +224,3 @@ This system is designed to run on **free and open-source models**, making it:
 It aligns with the vision of making **AI-assisted development and learning more equitable and scalable**.
 
 ---
-
-## 🧑‍💻 Author
-
-**Yash Mayekar**  
-📧 yashvmayekar21@gmail.com  
-🔗 https://github.com/YashMayekar  
-
----
