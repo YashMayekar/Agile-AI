@@ -1,6 +1,8 @@
 import express from "express";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
+import { projectProcessInfo } from "../core/project-state/project-state.repository";
+import { ProjectProcessInfo } from "../core/project-state/project-state.model";
 
 import { FileSystem } from "../utils/file-system";
 import {
@@ -19,24 +21,25 @@ import { OllamaAdapter } from "../llm/ollama.adapter";
 import { BaseActionEngine } from "../core/action-engine/base-engine";
 
 import { ProjectStateRepository } from "../core/project-state/project-state.repository";
+import { ExecutionLock } from "../core/execution-lock";
+
 
 const MODULE = "project.controller.ts";
 
-const router = express.Router();
 
 /* =========================================================
-   STREAM PARSER
+STREAM PARSER
 ========================================================= */
 
 class StreamParser {
   private buffer = "";
   private state:
-    | "SEEKING_RES"
-    | "WAITING_COLON"
-    | "INSIDE_RES"
-    | "DONE" = "SEEKING_RES";
+  | "SEEKING_RES"
+  | "WAITING_COLON"
+  | "INSIDE_RES"
+  | "DONE" = "SEEKING_RES";
   private escapeNext = false;
-
+  
   parse(chunk: string): string {
     let output = "";
     for (let i = 0; i < chunk.length; i++) {
@@ -73,7 +76,7 @@ class StreamParser {
 }
 
 /* =========================================================
-   GLOBAL CACHES
+GLOBAL CACHES
 ========================================================= */
 
 interface SystemStatus {
@@ -81,18 +84,11 @@ interface SystemStatus {
   message: string;
 }
 
-// export interface ProjectProcessInfo {
-//   abortController: AbortController;
-//   startTime: number;
-//   endTime?: number;
-//   active: boolean;
-//   ExecutionLock: boolean;
-// }
 
 export const llmInstances = new Map<string, OllamaAdapter>();
 export const systemStatuses = new Map<string, SystemStatus>();
-// export const projectProcessInfo = new Map<string, ProjectProcessInfo>();
 
+const router = express.Router();
 // System Health
 router.get("/health", (req, res) => {
   res.json({
@@ -155,33 +151,34 @@ router.get("/:projectId/history", async (req, res) => {
   });
 });
 
-// /* =========================================================
-//    ABORT ROUTE (without deleting)
-// ========================================================= */
-// router.post("/:projectId/abort", async (req, res) => {
-//   const { projectId } = req.params;
-//   await withProjectLogging(projectId, async () => {
-//     try {
-//       logger.warn(`[${MODULE}] ABORT_REQUESTED`);
-//       const processInfo = projectProcessInfo.get(projectId);
-//       if (processInfo) {
-//         processInfo.abortController.abort();
-//         processInfo.active = false    ;
-//         logger.info(`[${MODULE}] ABORT_SIGNAL_SENT`);
-//         res.json({ message: `Processes for project ${projectId} aborted` });
-//       } else {
-//         logger.warn(`[${MODULE}] NO_ACTIVE_PROCESS_TO_ABORT`);
-//         res.status(404).json({ error: "No active process found for this project" });
-//       }
-//     } catch (err: any) {
-//       logger.error(`[${MODULE}] ABORT_FAILED`, {
-//         error: err?.message,
-//         stack: err?.stack
-//       });
-//       res.status(500).json({ error: "Failed to abort processes" });
-//     }
-//   });
-// });
+/* =========================================================
+   ABORT ROUTE (without deleting)
+========================================================= */
+router.post("/:projectId/abort", async (req, res) => {
+  const { projectId } = req.params;
+  await withProjectLogging(projectId, async () => {
+    try {
+      logger.warn(`[${MODULE}] ABORT_REQUESTED for project ${projectId}`);
+      const processInfo = projectProcessInfo.get(projectId);
+      if (processInfo) {
+        processInfo.project_AbortController.abort();
+        processInfo.active = false    ;
+        logger.info(`[${MODULE}] ABORT_SIGNAL_SENT`);
+        ExecutionLock.release(projectId);
+        res.json({ message: `Processes for project ${projectId} aborted` });
+      } else {
+        logger.warn(`[${MODULE}] NO_ACTIVE_PROCESS_TO_ABORT`);
+        res.status(404).json({ error: "No active process found for this project" });
+      }
+    } catch (err: any) {
+      logger.error(`[${MODULE}] ABORT_FAILED`, {
+        error: err?.message,
+        stack: err?.stack
+      });
+      res.status(500).json({ error: "Failed to abort processes" });
+    }
+  });
+});
 
 /* =========================================================
    DELETE PROJECT (with abort)
@@ -192,14 +189,15 @@ router.delete("/:projectId", async (req, res) => {
     try {
       logger.info(`[${MODULE}] DELETE_REQUESTED`);
 
-      // // Abort any running streams for this project
-      // const processInfo = projectProcessInfo.get(projectId);
-      // if (processInfo) {
-      //   processInfo.abortController.abort();
-      //   processInfo.active = false;
-      //   await new Promise(resolve => setTimeout(resolve, 500)); // grace period
-      //   projectProcessInfo.delete(projectId);
-      // }
+      // Abort any running streams for this project
+      const processInfo = projectProcessInfo.get(projectId);
+      if (processInfo) {
+        processInfo.project_AbortController.abort();
+        processInfo.active = false;
+        await new Promise(resolve => setTimeout(resolve, 500)); // grace period
+        projectProcessInfo.delete(projectId);
+      }
+
 
       const projectPath = path.join("projects", projectId);
       if (FileSystem.exists(projectPath)) {
@@ -260,6 +258,13 @@ router.post("/init", async (req, res) => {
       const llm = new OllamaAdapter();
       llmInstances.set(projectId, llm);
 
+      projectProcessInfo.set(projectId, {
+        projectId,
+        project_AbortController: new AbortController(),
+        active: true,
+        subProcesses: new Map()
+      });
+      
       logger.info(`[${MODULE}] PROJECT_INITIALIZED`);
       res.json({ projectId });
     } catch (err: any) {
@@ -277,6 +282,7 @@ router.post("/init", async (req, res) => {
 ========================================================= */
 router.post("/:projectId/m/s", async (req, res) => {
   const { projectId } = req.params;
+  const ChatId = uuidv4();
   await withProjectLogging(projectId, async () => {
     res.setHeader("Content-Type", "application/json");
     const { userInput, planning } = req.body;
@@ -294,28 +300,21 @@ router.post("/:projectId/m/s", async (req, res) => {
       res.write(JSON.stringify(data) + "\n");
     };
 
-    // const processInfo: ProjectProcessInfo = {
-    //   abortController: new AbortController(),
-    //   startTime: Date.now(),
-    //   active: true,
-    //   ExecutionLock: false
-    // };
-    // projectProcessInfo.set(projectId, processInfo);
-    // const signal = processInfo.abortController.signal;
-
-    // const cleanup = () => {
-    //   if (processInfo.active) {
-    //     if (!res.writableEnded) {
-    //       processInfo.abortController.abort();
-    //     }
-    //     processInfo.active = false;
-    //     if (projectProcessInfo.get(projectId) === processInfo) {
-    //       projectProcessInfo.delete(projectId);
-    //     }
-    //   }
-    // };
-    // req.on("close", cleanup);
-    // req.on("error", cleanup);
+    const processInfo = projectProcessInfo.get(projectId);
+    if (!processInfo) {
+      logger.warn(`[${MODULE}] NO_PROCESS_INFO_FOUND, CREATING_NEW_ONE`);
+      const newProcessInfo: ProjectProcessInfo = {
+        projectId,
+        project_AbortController: new AbortController(),
+        active: true,
+        subProcesses: new Map()
+      };
+      projectProcessInfo.set(projectId, newProcessInfo);
+    } else if (!processInfo.active) {
+      logger.warn(`[${MODULE}] INACTIVE_PROCESS_INFO_FOUND, REACTIVATING`);
+      processInfo.project_AbortController = new AbortController();
+      processInfo.active = true;
+    }    
 
     try {
       /* =====================================================
@@ -326,7 +325,7 @@ router.post("/:projectId/m/s", async (req, res) => {
         projectId,
         userInput,
         llm,
-        planning,
+        planning
       );
 
       const parser1 = new StreamParser();

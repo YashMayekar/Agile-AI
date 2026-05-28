@@ -8,8 +8,7 @@ import { WorkflowEngine, WorkflowStep } from "./workflow-engine";
 import { systemStatuses } from "../api/project.controller";
 import { StateManager } from "./state-manager";
 import fs from "fs";
-import { ProjectStateRepository } from "./project-state/project-state.repository";
-import projectProcessInfo from "../api/project.controller";
+import { ProjectStateRepository, projectProcessInfo } from "./project-state/project-state.repository";
 
 const MODULE = "orchestrator.ts";
 
@@ -27,12 +26,16 @@ export class Orchestrator {
     userInput: string,
     llm?: OllamaAdapter,
     planning: boolean = true,
-signal?: AbortSignal
   ): AsyncGenerator<{ res: string | null; tools?: any; think?: string | null; done: boolean }, any, unknown> {
-if (signal?.aborted) throw new Error("Aborted by user or system");
 
-    
-    ExecutionLock.acquire(projectId);
+    try {
+      ExecutionLock.acquire(projectId);
+    } catch (e) {
+      logger.warn(`[${MODULE}] Could not acquire execution lock for project ${projectId}. Another process might be running.`);
+      yield { res: "Another process is currently running for this project. Please try again later.", done: true };
+      return;
+    }
+
     this.ExecutionLock = true;
     logger.info(`[${MODULE}] EXECUTION LOCK ENABLE - Processing input`);
     systemStatuses.set(projectId, { object: "", message: "CONNECTING TO gpt-oss:20b model..." });
@@ -135,8 +138,7 @@ Before generating or reading files in the system check if its present in the abo
         let actions: Action[] | null = null;
         if (lastAssistantMessage) {
           // Pass signal to GetIntent
-          intent = await llmInstance.GetIntent(projectId, userInput, lastAssistantMessage, { signal });
-          if (signal?.aborted) throw new Error("Aborted by user or system");
+          intent = await llmInstance.GetIntent(projectId, userInput, lastAssistantMessage);
           try {
             BaseActionEngine.parseResponse(intent);
           } catch (e) {
@@ -144,12 +146,11 @@ Before generating or reading files in the system check if its present in the abo
             intent = "";
             const retry = `The assistant's last message was not in the correct format. Please Try again \n${userInput}`;
             logger.warn(`[${MODULE}] Retrying intent detection.`);
-            intent = await llmInstance.GetIntent(projectId, retry, lastAssistantMessage, { signal });
-            if (signal?.aborted) throw new Error("Aborted by user or system");
+            intent = await llmInstance.GetIntent(projectId, retry, lastAssistantMessage);
             BaseActionEngine.parseResponse(intent);
           }
           actions = BaseActionEngine.getActions(intent);
-          await BaseActionEngine.executeActions(projectId, actions, signal);
+          await BaseActionEngine.executeActions(projectId, actions);
         }
 
         let data = "";
@@ -167,8 +168,7 @@ Before generating or reading files in the system check if its present in the abo
               } else {
                 logger.info(`[${MODULE}] Generating summary for required file: ${file}`);
                 const fileContent = fs.readFileSync(safePath, "utf-8") || "FILE NOT FOUND";
-                summary = await llmInstance.GetSummary(projectId, fileContent, { signal });
-                if (signal?.aborted) throw new Error("Aborted by user or system");
+                summary = await llmInstance.GetSummary(projectId, fileContent);
                 fs.writeFileSync(summaryPath, summary, "utf-8");
               }
               data += `#${file}\n \`\`\`${summary}\`\`\`\n\n`;
@@ -195,11 +195,9 @@ ${historyText}
             systemPrompt: ContextBuilder.buildFullContext(projectId, currentStepID, agent) || "You are an assistant.",
             userPrompt: this.FullPrompt,
           },
-          { signal }
         );
 
         for await (const chunk of stream) {
-          if (signal?.aborted) throw new Error("Aborted by user or system");
           yield chunk;
           if (chunk.res) fullResponse += chunk.res;
         }
@@ -267,16 +265,14 @@ ${JSON.stringify(structuredHistory)}
             systemPrompt: this.context || "You are an assistant.",
             userPrompt: this.FullPrompt,
           },
-          { signal }
         );
 
         for await (const chunk of stream) {
-          if (signal?.aborted) throw new Error("Aborted by user or system");
           yield chunk;
           if (chunk.res) fullResponse += chunk.res;
         }
         let actions: Action[] | null = BaseActionEngine.getActions(fullResponse);
-        await BaseActionEngine.executeActions(projectId, actions, signal);
+        await BaseActionEngine.executeActions(projectId, actions);
       }
 
       logger.debug(`[${MODULE}] Full LLM response:\n${fullResponse}`);
@@ -363,8 +359,7 @@ ${JSON.stringify(structuredHistory)}
               summary = fs.readFileSync(summaryPath, "utf-8");
             } else {
               const fileContent = fs.readFileSync(safePath, "utf-8") || "FILE NOT FOUND";
-              summary = await llmInstance.GetSummary(projectId, fileContent, { signal });
-              if (signal?.aborted) throw new Error("Aborted by user or system");
+              summary = await llmInstance.GetSummary(projectId, fileContent);
               fs.writeFileSync(summaryPath, summary, "utf-8");
             }
             data += `#${file}\n \`\`\`${summary}\`\`\`\n\n`;
@@ -392,11 +387,9 @@ Now greet the user and proceed to document generation.
           systemPrompt: ContextBuilder.buildFullContext(projectId, currentStepID, agent) || "You are an assistant.",
           userPrompt: fullPrompt,
         },
-        { signal }
       );
 
       for await (const chunk of stream) {
-        if (signal?.aborted) throw new Error("Aborted by user or system");
         yield chunk;
         if (chunk.res) fullResponse += chunk.res;
       }

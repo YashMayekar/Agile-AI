@@ -7,6 +7,9 @@ import path from "path";
 import { FileSystem } from "../../utils/file-system";
 import { ProjectState } from "./project-state.model";
 import { logger } from "../../utils/logger";
+import { ProjectProcessInfo } from "./project-state.model";
+
+export const projectProcessInfo = new Map<string, ProjectProcessInfo>();
 
 export class ProjectStateRepository {
 

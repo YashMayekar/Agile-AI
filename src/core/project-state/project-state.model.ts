@@ -53,6 +53,16 @@ export interface ChatHistoryEntry {
   timestamp: number; // actual timestamp (e.g., Date.now())
 }
 
+export interface ProjectProcessInfo {
+  projectId: string;
+  project_AbortController: AbortController;
+  active: boolean;
+  subProcesses: Map<string, {
+    processID: string, 
+    process_AbortController: AbortController, 
+    active: boolean
+  }>;
+}
 
 export interface ProjectState {
   projectId: string;

@@ -4,6 +4,7 @@ import { systemStatuses } from "../api/project.controller";
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import path from "path/win32";
+import { projectProcessInfo } from "../core/project-state/project-state.repository";
 
 const MODULE = "ollama.adapter.ts";
 dotenv.config();
@@ -39,7 +40,6 @@ export class OllamaAdapter implements LLMAdapter {
   public async GetSummary(
     projectId: string,
     input: string,
-    options?: { signal?: AbortSignal }
   ): Promise<string> {
     logger.info(`[${MODULE}] Generating summary for project ${projectId}...`);
     const systemPrompt = `You are a helpful assistant that summarizes project documents context without missing any important information for the user.`;
@@ -59,7 +59,6 @@ export class OllamaAdapter implements LLMAdapter {
           think: false,
           keep_alive: "50m",
         }),
-        signal: options?.signal
       });
       const data = await response.json();
       const durationMs = Date.now() - startTime;
@@ -77,8 +76,10 @@ export class OllamaAdapter implements LLMAdapter {
     projectId: string,
     input: string,
     historyText: string,
-    options?: { signal?: AbortSignal }
   ): Promise<string> {
+
+    const signal = projectProcessInfo.get(projectId)?.project_AbortController.signal;
+
     this.intent_prompt = await loadPrompt();
     const systemPrompt = this.intent_prompt + "\n\n" + "Last LLM response:\n" + historyText + "\n\n" + "Output the intent as a JSON object with the specified format and rules.";
     try {
@@ -96,6 +97,7 @@ export class OllamaAdapter implements LLMAdapter {
           stream: false,
           think: true,
           keep_alive: "50m",
+          signal: signal,
           format: {
             type: "object",
             properties: {
@@ -118,7 +120,6 @@ export class OllamaAdapter implements LLMAdapter {
             required: ["actions"]
           }
         }),
-        signal: options?.signal
       });
       const data = await response.json();
       const durationMs = Date.now() - startTime;
@@ -132,7 +133,7 @@ export class OllamaAdapter implements LLMAdapter {
     }
   }
 
-  async GetWorkFlowType(projectId: string, input: string, options?: { signal?: AbortSignal }): Promise<any> {
+  async GetWorkFlowType(projectId: string, input: string): Promise<any> {
     try {
       let thinking: string | boolean = true;
       if (this.model === "gpt-oss:20b") thinking = "low";
@@ -147,7 +148,6 @@ export class OllamaAdapter implements LLMAdapter {
           think: thinking,
           keep_alive: "30m",
         }),
-        signal: options?.signal
       });
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
       const data = await response.json();
@@ -161,7 +161,6 @@ export class OllamaAdapter implements LLMAdapter {
   async executeAction(
     projectId: string,
     params: { systemPrompt: string; userPrompt: string; dynamicContext?: string; history?: { role: string; content: string }[] },
-    options?: { signal?: AbortSignal }
   ): Promise<any> {
     try {
       let thinking: string | boolean = true;
@@ -181,7 +180,6 @@ export class OllamaAdapter implements LLMAdapter {
           think: thinking,
           keep_alive: "30m",
         }),
-        signal: options?.signal
       });
       if (!response.ok) throw new Error(`Request failed: ${response.status}`);
       const data = await response.json();
@@ -195,8 +193,15 @@ export class OllamaAdapter implements LLMAdapter {
   async *generate(
     projectId: string,
     params: { systemPrompt: string; userPrompt: string; dynamicContext?: string; history?: { role: string; content: string }[] },
-    options?: { signal?: AbortSignal }
   ): AsyncGenerator<{ res: string | null; tools: string | null; think?: string | null; done: boolean }> {
+    
+    if (projectProcessInfo.has(projectId) && projectProcessInfo.get(projectId)?.project_AbortController.signal.aborted) {
+          console.log(`[${MODULE}] Abort signal detected for project ${projectId}. Skipping generation.`);
+          logger.warn(`[${MODULE}] Abort detected before generation`);
+          yield { res: null, tools: null, think: null, done: true };
+          return;
+    }
+    
     const useChat = true;
     const endpoint = useChat ? `${OLLAMA_URL}/api/chat` : `${OLLAMA_URL}/api/generate`;
     let thinking: string | boolean = false;
@@ -223,17 +228,11 @@ export class OllamaAdapter implements LLMAdapter {
     systemStatuses.set(projectId, { object: "", message: `CONNECTING TO ${this.model} model` });
 
 
-    if (options?.signal) {
-      options.signal.addEventListener('abort', () => {
-        logger.warn(`[${MODULE}] Request aborted for project ${projectId}`);
-      });
-    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
-      signal: options?.signal
     });
 
     if (!response.body) throw new Error('No response body');
@@ -246,13 +245,20 @@ export class OllamaAdapter implements LLMAdapter {
 
     try {
       while (true) {
-        if (options?.signal?.aborted) throw new Error("Aborted by user or system");
+        
+        if (projectProcessInfo.has(projectId) && projectProcessInfo.get(projectId)?.project_AbortController.signal.aborted) {
+          console.log(`[${MODULE}] Abort signal detected for project ${projectId}. Stopping stream read.`);
+          logger.warn(`[${MODULE}] Abort detected before read`);
+          break;
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
         for (const line of lines) {
+          
           if (line.trim() === '') continue;
           try {
             const data = JSON.parse(line);

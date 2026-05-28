@@ -21,6 +21,8 @@ export class ExecutionLock {
   }
 
   static release(projectId: string) {
-    activeLocks.delete(projectId);
+    if (activeLocks.has(projectId)) {
+      activeLocks.delete(projectId);
+    }
   }
 }
