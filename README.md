@@ -5,7 +5,7 @@ Agile-AI is a **state-aware, multi-agent orchestration system** designed to auto
 
 It enables structured, iterative, and context-aware development by maintaining **project-level memory**, orchestrating **specialized agents**, and converting LLM outputs into **executable system actions**.
 
----
+--- 
 
 ## ✨ Key Features
 
